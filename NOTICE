@@ -1,0 +1,36 @@
+Agentic Quantum Error Mitigation Lab
+Copyright 2026
+
+This product includes software developed by third parties under the
+Apache License, Version 2.0. The full license text is reproduced at
+http://www.apache.org/licenses/LICENSE-2.0.
+
+================================================================================
+1. NVIDIA Quantum-Calibration-Agent-Blueprint
+================================================================================
+SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES.
+SPDX-License-Identifier: Apache-2.0
+Source: https://github.com/NVIDIA/Quantum-Calibration-Agent-Blueprint
+
+The following files are copied (verbatim or adapted) from the blueprint and
+retain their original SPDX headers:
+  - src/aqem/vlm/providers.py   (adapted: added BedrockClaudeProvider + SageMakerProvider)
+  - src/aqem/vlm/renderer.py    (verbatim)
+
+================================================================================
+2. Amazon Braket Examples
+================================================================================
+Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+SPDX-License-Identifier: Apache-2.0
+Source: https://github.com/amazon-braket/amazon-braket-examples
+        (examples/error_mitigation/)
+
+The following files are copied (verbatim or adapted) from the Braket examples
+repository. The upstream files carry no per-file header; the Apache-2.0 header
+has been added on copy, with attribution to the source repository:
+  - src/aqem/braket_mitiq/mitiq_braket_tools.py   (adapted: package-relative import)
+  - src/aqem/braket_mitiq/mitigation_tools.py     (verbatim)
+  - src/aqem/braket_mitiq/program_set_tools.py    (verbatim)
+  - src/aqem/braket_mitiq/observable_tools.py     (verbatim)
+  - src/aqem/braket_mitiq/circuit_tools.py        (adapted: kept metadata-free helpers only)
+  - src/aqem/braket_mitiq/noise_models.py         (verbatim)

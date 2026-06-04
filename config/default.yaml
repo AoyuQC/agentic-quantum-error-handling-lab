@@ -1,0 +1,41 @@
+# Default configuration for the Agentic QEM Lab (local-first core).
+# Sections are consumed as later phases land; L0 only needs `vlm` and `noise`.
+
+# --- VLM (vision) provider -------------------------------------------------
+# Managed Bedrock Claude is the default (Phase L3). The small NVIDIA
+# Ising-Calibration VLM on a SageMaker endpoint is a later, config-only swap:
+# set provider: sagemaker and fill endpoint_name/region.
+vlm:
+  provider: bedrock                # bedrock (default) | sagemaker | anthropic | nvidia | custom
+  model_id: us.anthropic.claude-sonnet-4-5-20250929-v1:0
+  region: us-east-1
+  temperature: 0
+  max_tokens: 4096
+  confidence_threshold: 0.5        # below this, fall back to deterministic numeric rules
+  # endpoint_name: ising-calibration-vlm   # used only when provider: sagemaker
+
+# --- Execution device / noise model ---------------------------------------
+# One of the named LocalSimulator instances in braket_mitiq.noise_models.
+noise:
+  device: qd_total                 # qd_readout | qd_readout_2 | qd_depol | qd_total | qd_amp
+
+# --- Shot / cost budget (Policy hard gate) ---------------------------------
+budget:
+  shots_total: 200000
+  cost_total: null                 # null = no cost ceiling on local simulator
+
+# --- Probe stage -----------------------------------------------------------
+probe:
+  shots: 2000
+  n_twirls: 5
+
+# --- Static full-stack baseline (for the efficiency comparison) ------------
+baseline:
+  shots: 100000
+  zne_scale_factors: [1, 2, 3]
+  zne_factory: Richardson
+  twirl_count: 16
+
+# --- Policy ----------------------------------------------------------------
+policy:
+  max_retries_per_node: 3

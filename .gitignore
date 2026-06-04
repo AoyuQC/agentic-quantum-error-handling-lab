@@ -216,3 +216,10 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# --- AQEM project-specific ---
+# Run artifacts (audit logs, plots, reports)
+runs/
+# Local agent / tool state
+.claude/
+.synapse/

@@ -1,0 +1,60 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aqem"
+version = "0.1.0"
+description = "Agentic Quantum Error Mitigation Lab — VLM-guided, adaptive Mitiq error mitigation on Amazon Braket"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+dependencies = [
+    "amazon-braket-sdk==1.117.3",   # matches verified env; provides braket.program_sets
+    "mitiq==1.0.0",                 # ZNE / PT / REM techniques
+    "cirq-ionq==1.6.1",             # required by mitiq's Braket<->cirq conversion (ZNE folding, PT)
+    "numpy>=1.26,<2.1",             # compatible with braket-sdk 1.117.3
+    "networkx>=3.0",                # observable_tools pauli_grouping
+    "plotly==6.7.0",                # plot generation for VLM inspection
+    "kaleido==0.2.1",               # plotly -> PNG; 0.2.1 bundles chromium (works headless).
+                                    # kaleido>=1.0 needs a separately-installed Chrome.
+    "langchain-core>=1.4",          # VLM message types (1.x line, required by langchain-aws 1.5)
+    "langchain-aws>=1.5",           # ChatBedrockConverse (default VLM) + SagemakerEndpoint
+    "boto3>=1.34",                  # Bedrock / SageMaker invocation
+    "pydantic>=2.6",                # structured VLM JSON validation
+    "pyyaml>=6.0",                  # config loader
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.6",
+]
+# Deferred (Phase C5) — cloud wrap and alternate VLM providers for offline dev.
+cloud = [
+    "bedrock-agentcore",
+    "langchain-anthropic",
+    "langchain-nvidia-ai-endpoints",
+]
+
+[project.scripts]
+aqem = "aqem.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"*" = ["*.yaml", "*.json", "*.md"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+markers = [
+    "integration: tests that run on a Braket LocalSimulator (no AWS)",
+    "bedrock: tests that require live Bedrock credentials",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
