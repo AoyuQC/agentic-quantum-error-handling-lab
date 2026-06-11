@@ -40,8 +40,16 @@ cloud = [
     "langchain-anthropic",
 ]
 
+# Web UI backend (Phase L5): FastAPI + SSE streaming.
+web = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "sse-starlette>=2.0",
+]
+
 [project.scripts]
 aqem = "aqem.cli:main"
+aqem-web = "aqem.web.server:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

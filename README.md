@@ -27,6 +27,7 @@ loop in-process; the VLM is managed Claude on Bedrock throughout.
 | L3 | Bedrock Claude VLM integration (structured JSON) | ✅ done |
 | L4 | CLI + efficiency demo (adaptive vs baseline) | ✅ done |
 | C5 | Cloud wrap: AgentCore Runtime + S3 + Guardrails | ✅ done |
+| L5 | Web UI: FastAPI backend + React frontend | ✅ done |
 
 ### Efficiency demo
 
@@ -74,6 +75,21 @@ export REGION=us-east-1
 ./deploy/deploy.sh invoke        # smoke test
 ```
 
+### Web UI
+
+A FastAPI + React console (in the spirit of the NVIDIA blueprint UI) drives a
+run, streams **live per-node DAG progress**, and renders the probe histograms,
+ZNE extrapolation, accuracy-vs-shots comparison, and Policy audit trail.
+
+```bash
+pip install -e ".[web]"
+cd ui && npm install && npm run build && cd ..
+aqem-web                      # http://localhost:8000 serves UI + API
+# dev mode: `aqem-web` + `cd ui && npm run dev` (Vite on :3099)
+```
+
+See [`ui/README.md`](ui/README.md).
+
 ## Layout
 
 ```
@@ -89,6 +105,8 @@ src/aqem/
   reporting/      # shots-vs-accuracy efficiency comparison
   tools/          # Gateway-shaped seams: braket_tool, vlm_tool
   cloud/          # C5: AgentCore Runtime entrypoint, S3 artifacts, Guardrails
+  web/            # L5: FastAPI backend (SSE streaming) — `aqem-web`
+ui/               # L5: React + Vite frontend (live DAG progress + charts)
 config/           # default.yaml (VLM provider, noise model, budget, …)
 deploy/           # Dockerfile target, deploy.sh, IAM policy, RUNBOOK.md
 agent.py          # AgentCore Runtime entrypoint (BedrockAgentCoreApp)

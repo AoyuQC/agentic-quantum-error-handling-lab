@@ -12,6 +12,7 @@ approach from the NVIDIA blueprint's ``tools/workflow_tool.py``.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
@@ -117,6 +118,7 @@ class DAGEngine:
         validate_node_id: str = "validate",
         terminal_node_id: str | None = "report",
         max_iterations: int = 8,
+        observer: "Callable[[dict], None] | None" = None,
     ):
         self.nodes: dict[str, Node] = {n.node_id: n for n in nodes}
         if len(self.nodes) != len(nodes):
@@ -128,6 +130,17 @@ class DAGEngine:
         # excluded from the iterative dirty-node loop).
         self.terminal_node_id = terminal_node_id if terminal_node_id in self.nodes else None
         self.max_iterations = max_iterations
+        # Optional progress observer: called with small JSON-able event dicts
+        # ({"event": ..., ...}) as the run proceeds. Used by the web UI to
+        # stream live node/decision progress; a no-op by default.
+        self.observer = observer
+
+    def _emit(self, event: dict[str, Any]) -> None:
+        if self.observer is not None:
+            try:
+                self.observer(event)
+            except Exception:  # never let UI plumbing break a run
+                pass
 
     def invalidation_set(self, action: str) -> set[str]:
         """Public helper: nodes invalidated by a given retry action (for tests)."""
@@ -144,21 +157,30 @@ class DAGEngine:
         # still report the best estimate obtained so far.
         last_post_process: dict[str, Any] = {}
 
+        self._emit({"event": "run_start", "nodes": list(self.order)})
+
         for iteration in range(1, self.max_iterations + 1):
             record.iterations = iteration
+            self._emit({"event": "iteration", "iteration": iteration})
 
             # Execute dirty (non-terminal) nodes in topological order.
             for nid in self.order:
                 if nid not in dirty or nid == self.terminal_node_id:
                     continue
+                self._emit({"event": "node_start", "node": nid, "iteration": iteration})
                 result = self.nodes[nid].run(ctx)
                 record.node_results.append(result)
+                self._emit({
+                    "event": "node_done", "node": nid, "iteration": iteration,
+                    "status": result.status, "shots_used": result.shots_used,
+                })
                 if result.status == "failed":
                     record.status = "failed"
                     record.reason = f"node '{nid}' failed: {result.error}"
                     # Restore the last good estimate so report can still run.
                     if not ctx.has("post_process") and last_post_process:
                         ctx.put("post_process", last_post_process)
+                    self._emit({"event": "node_failed", "node": nid, "reason": result.error})
                     return self._finalize(ctx, record)
                 if nid == "post_process":
                     last_post_process = ctx.get("post_process")
@@ -166,10 +188,15 @@ class DAGEngine:
             # Read the validate node's decision.
             decision = self._decision_from(ctx)
             record.decision = decision
+            self._emit({
+                "event": "decision", "iteration": iteration,
+                "action": decision.action, "reason": decision.reason,
+            })
 
             if decision.action == DecisionAction.STOP.value:
                 record.status = "stopped"
                 record.reason = decision.reason
+                self._emit({"event": "run_end", "status": "stopped", "reason": decision.reason})
                 return self._finalize(ctx, record)
 
             # A retry: count it against the seed node's retry budget.

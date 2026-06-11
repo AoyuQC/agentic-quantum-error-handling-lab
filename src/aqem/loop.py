@@ -31,6 +31,7 @@ def run_adaptive_loop(
     max_iterations: int = 8,
     max_retries_per_node: int = 3,
     seed: Optional[int] = None,
+    observer: Optional[Any] = None,
 ) -> RunRecord:
     """Run the full adaptive loop and return the engine RunRecord.
 
@@ -74,5 +75,5 @@ def run_adaptive_loop(
         config=dict(config or {}),
         vlm=vlm,
     )
-    engine = DAGEngine(default_nodes(), max_iterations=max_iterations)
+    engine = DAGEngine(default_nodes(), max_iterations=max_iterations, observer=observer)
     return engine.run(ctx)

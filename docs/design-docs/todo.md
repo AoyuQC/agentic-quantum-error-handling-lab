@@ -77,6 +77,21 @@ has clean seams (in-process `tools/`, JSON-serializable models).
 
 ---
 
+## L5 — Web UI (FastAPI + React)  `[x]`
+A web console in the spirit of the NVIDIA blueprint UI. Runs the loop, streams
+live per-node progress, and renders the figures + audit trail.
+- [x] Engine `observer` hook → emits run/node/decision events (no-op by default)
+- [x] FastAPI backend (`web/server.py`, `aqem-web`): `/api/health`, `/api/devices`,
+      `/api/run` (SSE streaming progress + final result with Plotly figures + audit)
+- [x] React + Vite + TS frontend (`ui/`): run form, live DAG progress, metric cards,
+      efficiency comparison, Plotly charts (probe histograms, ZNE, accuracy-vs-shots), audit table
+- [x] Single-process serve: backend mounts the built `ui/dist` at `/`
+- [x] `web` optional-deps extra (fastapi, uvicorn, sse-starlette)
+- **Accept:** `npm run build` succeeds; backend serves UI + API; live `POST /api/run`
+  streams progress + result; `tests/integration/test_web.py` green. ✅
+
+---
+
 ## Future work (design-doc §9)
 - [ ] Real-device execution: Braket local device emulator + QPUs (empirical-probe design carries over)
 - [ ] Neural QEC decoding (NVIDIA Ising-Decoding) on syndrome data
@@ -91,4 +106,5 @@ has clean seams (in-process `tools/`, JSON-serializable models).
   adaptive loop, baseline-vs-adaptive efficiency, CLI commands
 - Live Bedrock smoke: `AQEM_RUN_BEDROCK=1 pytest -m bedrock` (needs AWS creds)
 - Cloud handler: `tests/integration/test_runtime.py`; cloud units: `tests/unit/test_cloud.py`
-- Current status: **61 passed, 1 deselected** (offline) + **1 passed** (live Bedrock), ruff clean
+- Web backend: `tests/integration/test_web.py`; frontend build: `cd ui && npm run build`
+- Current status: **63 passed, 1 deselected** (offline) + **1 passed** (live Bedrock), ruff clean
