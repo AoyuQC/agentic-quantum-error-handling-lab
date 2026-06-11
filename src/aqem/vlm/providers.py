@@ -286,13 +286,18 @@ class BedrockClaudeProvider(VLMProvider):
         except ImportError as e:  # pragma: no cover - langchain-core is a hard dep
             raise RuntimeError("langchain-core is required for the Bedrock provider") from e
 
+        # langchain-core v1 canonical data-content-block shape. (Note: the
+        # short {"type":"image","base64":...,"mimeType":...} form is mis-handled
+        # by current langchain-aws; this source_type/data/mime_type form is the
+        # one that survives the full Converse conversion — verified live.)
         content: list[dict] = []
         for img_b64 in images_base64:
             content.append(
                 {
                     "type": "image",
-                    "base64": img_b64,
-                    "mimeType": f"image/{image_format}",
+                    "source_type": "base64",
+                    "data": img_b64,
+                    "mime_type": f"image/{image_format}",
                 }
             )
         content.append({"type": "text", "text": prompt})

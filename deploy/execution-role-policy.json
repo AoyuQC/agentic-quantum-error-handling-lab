@@ -1,0 +1,41 @@
+{
+  "Version": "2012-10-17",
+  "Comment": "Least-privilege policy for the AQEM AgentCore Runtime execution role. Replace ${BUCKET} and ${REGION}/${ACCOUNT} placeholders, or let deploy/deploy.sh fill them.",
+  "Statement": [
+    {
+      "Sid": "InvokeBedrockClaude",
+      "Effect": "Allow",
+      "Action": [
+        "bedrock:InvokeModel",
+        "bedrock:InvokeModelWithResponseStream"
+      ],
+      "Resource": [
+        "arn:aws:bedrock:*::foundation-model/anthropic.claude-*",
+        "arn:aws:bedrock:*:${ACCOUNT}:inference-profile/*anthropic.claude-*"
+      ]
+    },
+    {
+      "Sid": "ApplyGuardrails",
+      "Effect": "Allow",
+      "Action": ["bedrock:ApplyGuardrail"],
+      "Resource": "arn:aws:bedrock:${REGION}:${ACCOUNT}:guardrail/*"
+    },
+    {
+      "Sid": "ArtifactBucket",
+      "Effect": "Allow",
+      "Action": ["s3:PutObject", "s3:GetObject"],
+      "Resource": "arn:aws:s3:::${BUCKET}/*"
+    },
+    {
+      "Sid": "Observability",
+      "Effect": "Allow",
+      "Action": [
+        "logs:CreateLogGroup",
+        "logs:CreateLogStream",
+        "logs:PutLogEvents",
+        "cloudwatch:PutMetricData"
+      ],
+      "Resource": "*"
+    }
+  ]
+}

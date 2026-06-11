@@ -54,6 +54,12 @@ def run_adaptive_loop(
     """
     if seed is not None:
         random.seed(seed)
+        # The Braket density-matrix simulator samples shots via numpy's global
+        # RNG, and mitiq twirling uses Python's `random`; seed both so a given
+        # seed yields a reproducible run regardless of prior RNG consumption.
+        import numpy as np
+
+        np.random.seed(seed)
 
     policy = Policy(
         budget=budget,

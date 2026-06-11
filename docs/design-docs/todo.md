@@ -58,16 +58,22 @@ Legend: `[x]` done · `[ ]` pending · `[~]` deferred
 
 ---
 
-## C5 — Cloud wrap  `[~ DEFERRED]`
-Not part of the local-first build. Code already has the seams (Gateway-shaped
-`tools/`, config-swappable VLM provider, JSON-serializable models).
-- [ ] Wrap the loop as a Bedrock AgentCore **Runtime** entrypoint
-- [ ] Expose `tools/braket_tool.py` + `tools/vlm_tool.py` as AgentCore **Gateway** MCP tools
-- [ ] Deploy the NVIDIA Ising-Calibration VLM on **SageMaker**; swap `vlm.provider: sagemaker` (config-only)
-- [ ] Move large artifacts (arrays, plots) to **S3**
-- [ ] Add **Bedrock Guardrails** alongside the existing `policy/` layer
-- [ ] Wire AgentCore **Identity / Memory / Observability**
-- **Accept:** same demo runs on Runtime; Claude → Ising VLM swap is config-only
+## C5 — Cloud wrap  `[x]`
+Wrap the local-first loop for Amazon Bedrock AgentCore. **VLM stays managed
+Claude on Bedrock** (the SageMaker/Ising-VLM swap is dropped from scope). Code
+has clean seams (in-process `tools/`, JSON-serializable models).
+- [x] Wrap the loop as a Bedrock AgentCore **Runtime** entrypoint (`cloud/runtime.py`, `agent.py`)
+- [x] Move large artifacts (arrays, plots) to **S3** (`cloud/artifacts.py`, with local fallback)
+- [x] Add **Bedrock Guardrails** alongside the existing `policy/` layer (`cloud/guardrails.py`)
+- [x] AgentCore Observability: structured run summary + full audit returned in the response and persisted
+- [x] Deployment assets: `Dockerfile`, `deploy/deploy.sh`, `deploy/execution-role-policy.json`, `deploy/RUNBOOK.md`
+- [x] Live Bedrock VLM verified end-to-end (fixed langchain-aws image-block format → `source_type/data/mime_type`)
+- [x] Live S3 artifact path verified (bucket `aqem-artifacts-<acct>-us-east-1` provisioned; write/list confirmed)
+- **Accept:** ✅ Runtime handler runs locally (`invoke(...)` / `agentcore dev`); live Bedrock VLM + S3 verified;
+  efficiency gain reproduced through the cloud handler.
+- **Operator-run (needs an interactive session / IAM):** `agentcore configure` → `deploy` (creates the
+  execution role + ECR + Runtime). Fully scripted in `deploy/deploy.sh` + `deploy/RUNBOOK.md`.
+- Tools exposed in-process for now; a Gateway MCP server is a thin future add (seams already in `tools/`).
 
 ---
 
@@ -84,4 +90,5 @@ Not part of the local-first build. Code already has the seams (Gateway-shaped
 - Integration (local sim, no AWS): `pytest -m integration` — ProgramSet execution, baseline,
   adaptive loop, baseline-vs-adaptive efficiency, CLI commands
 - Live Bedrock smoke: `AQEM_RUN_BEDROCK=1 pytest -m bedrock` (needs AWS creds)
-- Current status: **55 passed, 1 skipped** (Bedrock), ruff clean
+- Cloud handler: `tests/integration/test_runtime.py`; cloud units: `tests/unit/test_cloud.py`
+- Current status: **61 passed, 1 deselected** (offline) + **1 passed** (live Bedrock), ruff clean

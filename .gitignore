@@ -223,3 +223,6 @@ runs/
 # Local agent / tool state
 .claude/
 .synapse/
+
+# ppt-master intermediate build scratch (keep only the deck + notes)
+docs/contents/ppt-master-projects/

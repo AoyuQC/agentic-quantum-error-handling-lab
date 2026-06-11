@@ -1,4 +1,11 @@
-"""Shared pytest configuration and fixtures for the AQEM test suite."""
+"""Shared pytest configuration and fixtures for the AQEM test suite.
+
+Note on determinism: the Braket density-matrix / state-vector simulators each
+construct their own ``np.random.default_rng()`` with no seed, so shot sampling
+is genuinely non-reproducible across runs. Integration tests therefore assert
+*behavioural invariants* (terminates, REM present, within budget, accurate when
+stopped) rather than an exact stop-vs-escalate trajectory or exact shot counts.
+"""
 
 import pytest
 

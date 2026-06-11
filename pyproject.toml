@@ -31,11 +31,13 @@ dev = [
     "pytest-asyncio>=0.23",
     "ruff>=0.6",
 ]
-# Deferred (Phase C5) — cloud wrap and alternate VLM providers for offline dev.
+# Phase C5 — cloud wrap on Amazon Bedrock AgentCore. VLM stays managed Claude
+# on Bedrock (langchain-aws, already a core dep); these add the Runtime SDK and
+# deployment toolkit. langchain-anthropic is optional for offline VLM dev.
 cloud = [
-    "bedrock-agentcore",
+    "bedrock-agentcore>=1.13",
+    "bedrock-agentcore-starter-toolkit>=0.3",
     "langchain-anthropic",
-    "langchain-nvidia-ai-endpoints",
 ]
 
 [project.scripts]

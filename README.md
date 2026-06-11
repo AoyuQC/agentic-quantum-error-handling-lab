@@ -15,9 +15,9 @@ full design, and the approved implementation plan for build phases.
 ## Status
 
 Built **local-first**: the core runs entirely on a Braket `LocalSimulator` with
-a noise model — no AWS infrastructure required. Cloud wrap (Bedrock AgentCore
-Runtime/Gateway, SageMaker-hosted Ising VLM) is deferred (Phase C5) but the code
-has clean seams to add it without a rewrite.
+a noise model — no AWS infrastructure required. The cloud wrap (Bedrock
+AgentCore Runtime + S3 artifacts + Guardrails) is implemented and runs the same
+loop in-process; the VLM is managed Claude on Bedrock throughout.
 
 | Phase | Scope | State |
 |---|---|---|
@@ -26,7 +26,7 @@ has clean seams to add it without a rewrite.
 | L2 | Deterministic DAG engine + Policy (rules-only) | ✅ done |
 | L3 | Bedrock Claude VLM integration (structured JSON) | ✅ done |
 | L4 | CLI + efficiency demo (adaptive vs baseline) | ✅ done |
-| C5 | Cloud wrap: AgentCore + SageMaker VLM | deferred |
+| C5 | Cloud wrap: AgentCore Runtime + S3 + Guardrails | ✅ done |
 
 ### Efficiency demo
 
@@ -51,6 +51,29 @@ $ aqem report --device qd_readout_2 --target 0.06 --seed 7
 The blind full stack wastes ZNE/PT shots (and is *less* accurate) where REM
 alone suffices — exactly the inefficiency the adaptive loop avoids.
 
+### Cloud (Bedrock AgentCore)
+
+The same loop runs as an AgentCore **Runtime** entrypoint (`agent.py` →
+`aqem.cloud.runtime`), with large artifacts in **S3** and optional Bedrock
+**Guardrails** alongside the deterministic `policy/` layer. The VLM is managed
+Claude on Bedrock. Run it locally without any AWS infra:
+
+```python
+from aqem.cloud.runtime import invoke
+invoke({"qubits": 2, "target_accuracy": 0.06, "device": "qd_readout_2", "seed": 7})
+```
+
+Deploy to AWS (see [`deploy/RUNBOOK.md`](deploy/RUNBOOK.md)):
+
+```bash
+pip install -e ".[cloud]"
+export REGION=us-east-1
+./deploy/deploy.sh provision     # S3 artifact bucket
+./deploy/deploy.sh configure     # agentcore configure -e agent.py -n aqem
+./deploy/deploy.sh deploy        # CodeBuild ARM64 image -> AgentCore Runtime
+./deploy/deploy.sh invoke        # smoke test
+```
+
 ## Layout
 
 ```
@@ -64,7 +87,11 @@ src/aqem/
   decision/       # rules-first + VLM decision logic
   baseline/       # static full-stack Mitiq baseline
   reporting/      # shots-vs-accuracy efficiency comparison
+  tools/          # Gateway-shaped seams: braket_tool, vlm_tool
+  cloud/          # C5: AgentCore Runtime entrypoint, S3 artifacts, Guardrails
 config/           # default.yaml (VLM provider, noise model, budget, …)
+deploy/           # Dockerfile target, deploy.sh, IAM policy, RUNBOOK.md
+agent.py          # AgentCore Runtime entrypoint (BedrockAgentCoreApp)
 tests/            # unit (offline) + integration (local simulator)
 ```
 
