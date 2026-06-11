@@ -93,6 +93,10 @@ live per-node progress, and renders the figures + audit trail.
 ---
 
 ## Future work (design-doc §9)
+- [ ] **Live AgentCore deploy** (operator step): run `agentcore configure` → `deploy` to stand up
+      the Runtime endpoint. Interactive and creates an IAM execution role, so it's not done in CI.
+      Fully scripted in `deploy/RUNBOOK.md` + `deploy/deploy.sh`; the handler, S3 path, and live
+      Bedrock VLM are already verified locally.
 - [ ] Real-device execution: Braket local device emulator + QPUs (empirical-probe design carries over)
 - [ ] Neural QEC decoding (NVIDIA Ising-Decoding) on syndrome data
 - [ ] Richer characterization: optionally fold in device calibration metadata when accessible
