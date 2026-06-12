@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import createPlotlyComponent from "react-plotly.js/factory";
 import Plotly from "plotly.js-dist-min";
 import type { Figure } from "./types";
@@ -14,19 +15,41 @@ const DARK_LAYOUT: Record<string, unknown> = {
   legend: { orientation: "h", y: -0.2 },
 };
 
-export function Chart({ figure, title }: { figure?: Figure; title?: string }) {
-  if (!figure) return null;
-  const layout: Record<string, unknown> = { ...DARK_LAYOUT, ...(figure.layout || {}) };
-  if (title) layout.title = { text: title };
-  return (
-    <div className="panel">
+export function Chart({
+  figure,
+  image,
+  title,
+  bare = false,
+  height = 320,
+}: {
+  figure?: Figure;
+  image?: string; // base64 PNG (e.g. the exact frame sent to the VLM)
+  title?: string;
+  bare?: boolean; // skip the .panel wrapper (for embedding inside node cards)
+  height?: number;
+}) {
+  // A raw base64 image takes priority — this is literally what the agent saw.
+  let body: ReactNode = null;
+  if (image) {
+    body = (
+      <figure className="agent-img">
+        <img src={`data:image/png;base64,${image}`} alt={title || "agent view"} />
+        {title && <figcaption>{title}</figcaption>}
+      </figure>
+    );
+  } else if (figure) {
+    const layout: Record<string, unknown> = { ...DARK_LAYOUT, ...(figure.layout || {}) };
+    if (title) layout.title = { text: title };
+    body = (
       <Plot
         data={figure.data}
         layout={layout}
         config={{ displayModeBar: false, responsive: true }}
-        style={{ width: "100%", height: "320px" }}
+        style={{ width: "100%", height: `${height}px` }}
         useResizeHandler
       />
-    </div>
-  );
+    );
+  }
+  if (!body) return null;
+  return bare ? body : <div className="panel">{body}</div>;
 }

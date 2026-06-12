@@ -65,6 +65,11 @@ def test_classify_probe_with_confident_vlm():
     assert result["degraded"] is False
     assert result["dominant_error"] == "readout"
     assert vlm.calls and vlm.calls[0]["n_images"] == 1
+    # The call is transparent: the rendered image, prompt, and raw answer are
+    # carried back so the UI can show what the agent saw and how it reasoned.
+    assert result["images"] and isinstance(result["images"][0], str)
+    assert "JSON object" in result["prompt"]
+    assert result["raw_response"]
 
 
 def test_low_confidence_is_degraded():

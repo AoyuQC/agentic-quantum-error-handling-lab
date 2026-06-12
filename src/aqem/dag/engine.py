@@ -173,6 +173,16 @@ class DAGEngine:
                 self._emit({
                     "event": "node_done", "node": nid, "iteration": iteration,
                     "status": result.status, "shots_used": result.shots_used,
+                    # Surface what the node concluded so the UI can show the
+                    # agent's reasoning. ``counts`` holds large histogram arrays
+                    # (rendered separately as figures) and ``_``-prefixed keys
+                    # are internal (e.g. live calibration objects), so drop both.
+                    "detail": {
+                        k: v for k, v in result.outputs.items()
+                        if k != "counts" and not k.startswith("_")
+                    },
+                    # The figures this node produced — what the agent "sees".
+                    "plots": list(result.plots),
                 })
                 if result.status == "failed":
                     record.status = "failed"
@@ -188,9 +198,16 @@ class DAGEngine:
             # Read the validate node's decision.
             decision = self._decision_from(ctx)
             record.decision = decision
+            # The validate node stores the metric it compared to target; surface
+            # it (with the target) so the UI can show "err 0.0013 <= target 0.06".
+            validate_out = ctx.get(self.validate_node_id) if ctx.has(self.validate_node_id) else {}
             self._emit({
                 "event": "decision", "iteration": iteration,
                 "action": decision.action, "reason": decision.reason,
+                "source": decision.source,
+                "metric_value": validate_out.get("metric_value"),
+                "error_estimate": validate_out.get("error_estimate"),
+                "target": ctx.problem.target_accuracy,
             })
 
             if decision.action == DecisionAction.STOP.value:

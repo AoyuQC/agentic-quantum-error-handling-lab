@@ -74,6 +74,25 @@ def _sse(event: str, data: Any) -> str:
     return f"event: {event}\ndata: {json.dumps(data, default=str)}\n\n"
 
 
+def _experiment(problem, circuit, ideal: float, req: RunRequest) -> dict[str, Any]:
+    """Describe the experiment the agent is solving, for the UI setup panel.
+
+    All values are read off the already-constructed Problem/Circuit — no shots
+    are consumed (``ideal`` is the exact noiseless reference).
+    """
+    return {
+        "num_qubits": problem.num_qubits,
+        "description": problem.description,
+        "observable_terms": [[float(c), p] for c, p in problem.observable],
+        "ansatz": f"depth {circuit.depth}, {len(circuit.instructions)} gates",
+        "ideal": ideal,
+        "target_accuracy": req.target_accuracy,
+        "device": req.device,
+        "budget_shots": req.budget_shots,
+        "seed": req.seed,
+    }
+
+
 def _run_stream(req: RunRequest):
     """Generator yielding SSE frames for one adaptive run."""
     from ..config import resolve_device
@@ -90,6 +109,10 @@ def _run_stream(req: RunRequest):
             device = resolve_device(req.device)
             problem, circuit = default_problem(req.qubits, target_accuracy=req.target_accuracy)
             ideal = ideal_expectation(circuit, problem.observable)
+
+            # Describe the experiment up front so the UI setup panel populates
+            # immediately (the same observer the engine uses).
+            observer({"event": "experiment", **_experiment(problem, circuit, ideal, req)})
 
             vlm = None
             if req.use_vlm:
@@ -159,6 +182,7 @@ def _build_result(record, problem, circuit, device, ideal, req: RunRequest) -> d
     result: dict[str, Any] = {
         "status": record.status,
         "iterations": record.iterations,
+        "experiment": _experiment(problem, circuit, ideal, req),
         "device": req.device,
         "ideal": ideal,
         "target_accuracy": req.target_accuracy,

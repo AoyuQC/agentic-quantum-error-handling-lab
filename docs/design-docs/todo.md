@@ -89,6 +89,14 @@ live per-node progress, and renders the figures + audit trail.
 - [x] `web` optional-deps extra (fastapi, uvicorn, sse-starlette)
 - **Accept:** `npm run build` succeeds; backend serves UI + API; live `POST /api/run`
   streams progress + result; `tests/integration/test_web.py` green. ✅
+- [x] **Agent-reasoning transparency:** engine `node_done`/`decision` events now carry per-node
+      `detail` + `plots` and the validate metric/target/source; `validate` node and `vlm_tool`
+      carry the full VLM verdict (rationale, confidence, the image the agent saw, prompt, raw
+      answer); web server emits an `experiment` setup frame (problem/observable/ansatz/ideal, no
+      shots) and embeds it in the final payload; UI renders the setup panel, what the agent "sees",
+      and its reasoning.
+- **Accept:** `node_done` streams the probe histograms; `experiment` frame describes the problem;
+  VLM trace exposes image/prompt/raw answer; `test_web.py` + `test_vlm_tool.py` green, UI builds. ✅
 
 ---
 

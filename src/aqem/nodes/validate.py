@@ -39,7 +39,8 @@ class ValidateNode(Node):
 
         # VLM judgment on the ZNE extrapolation plot (only meaningful when ZNE
         # ran, i.e. there are >=2 scale points to inspect).
-        vlm_verdict = None
+        vlm_verdict = None      # the confidence-gated verdict the decision uses
+        vlm_trace = None        # the full verdict (incl. image/prompt/raw) for the UI
         if ctx.vlm is not None and len(estimate.zne_data) >= 2:
             from ..reporting.plots import zne_extrapolation_figure
 
@@ -49,6 +50,7 @@ class ValidateNode(Node):
                 [{"name": "zne_extrapolation", "format": "plotly", "data": fig}],
                 confidence_threshold,
             )
+            vlm_trace = verdict
             if not verdict.get("degraded"):
                 vlm_verdict = verdict
 
@@ -75,6 +77,9 @@ class ValidateNode(Node):
             "decision": decision.to_dict(),
             "error_estimate": error_estimate,
             "metric_value": error_estimate if error_estimate is not None else estimate.error_bar,
+            # Full VLM verdict (rationale, confidence, the ZNE image it saw, the
+            # prompt, the raw answer) so the UI can show the agent's reasoning.
+            "vlm_verdict": vlm_trace,
         }
         ctx.put(self.node_id, outputs)
         return NodeResult(node_id=self.node_id, outputs=outputs)
