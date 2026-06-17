@@ -257,7 +257,7 @@ class BedrockClaudeProvider(VLMProvider):
 
     def __init__(
         self,
-        model_id: str = "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        model_id: str = "us.anthropic.claude-opus-4-8",
         region: Optional[str] = None,
         temperature: float = 0,
         max_tokens: int = 4096,
@@ -267,10 +267,16 @@ class BedrockClaudeProvider(VLMProvider):
         self.temperature = temperature
         self.max_tokens = max_tokens
 
+    # Newer Claude models reject the `temperature` parameter (Converse returns
+    # "`temperature` is deprecated for this model"). Omit it for those.
+    _NO_TEMPERATURE = ("opus-4-8", "opus-4-7", "opus-4-6")
+
     def _client(self):
         from langchain_aws import ChatBedrockConverse
 
-        kwargs = dict(model=self.model_id, temperature=self.temperature, max_tokens=self.max_tokens)
+        kwargs = dict(model=self.model_id, max_tokens=self.max_tokens)
+        if not any(tag in self.model_id for tag in self._NO_TEMPERATURE):
+            kwargs["temperature"] = self.temperature
         if self.region:
             kwargs["region_name"] = self.region
         return ChatBedrockConverse(**kwargs)
@@ -404,7 +410,7 @@ def get_vlm_client(config: dict) -> VLMProvider:
 
     if provider == "bedrock":
         return BedrockClaudeProvider(
-            model_id=config.get("model_id", config.get("model", "us.anthropic.claude-sonnet-4-5-20250929-v1:0")),
+            model_id=config.get("model_id", config.get("model", "us.anthropic.claude-opus-4-8")),
             region=config.get("region"),
             temperature=config.get("temperature", 0),
             max_tokens=config.get("max_tokens", 4096),

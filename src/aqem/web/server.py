@@ -116,9 +116,17 @@ def _run_stream(req: RunRequest):
 
             vlm = None
             if req.use_vlm:
+                import os
+
                 from ..vlm import get_vlm_client
 
-                vlm = get_vlm_client({"provider": "bedrock"})
+                config: dict[str, Any] = {"provider": "bedrock"}
+                # Honour AQEM_VLM_MODEL_ID (same env the runtime/MCP paths read),
+                # so the deployment can pin the Bedrock model (e.g. Opus 4.8).
+                model_id = os.environ.get("AQEM_VLM_MODEL_ID")
+                if model_id:
+                    config["model_id"] = model_id
+                vlm = get_vlm_client(config)
 
             record = run_adaptive_loop(
                 problem, circuit, device, Budget(shots_total=req.budget_shots),

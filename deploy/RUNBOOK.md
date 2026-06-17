@@ -12,8 +12,8 @@ optional **Bedrock Guardrails** screen free-text I/O alongside the deterministic
 ## Prerequisites
 
 - AWS credentials with permission for Bedrock, S3, IAM, and AgentCore.
-- Region **us-east-1** (AgentCore Runtime GA; Claude Sonnet 4.5 available). Verified.
-- Bedrock model access enabled for `anthropic.claude-sonnet-4-5` in the console.
+- Region **us-east-1** (AgentCore Runtime GA; Claude Opus 4.8 available). Verified.
+- Bedrock model access enabled for `anthropic.claude-opus-4-8` in the console.
 - Tooling: `pip install -e ".[cloud]"` (installs `bedrock-agentcore` +
   `bedrock-agentcore-starter-toolkit`).
 - Docker/Finch only if you use `--local`/`--local-build`; the default cloud

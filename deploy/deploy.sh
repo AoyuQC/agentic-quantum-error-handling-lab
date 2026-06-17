@@ -3,7 +3,7 @@
 #
 # Prereqs: AWS creds with permission to create S3/IAM + use Bedrock & AgentCore;
 #          `pip install bedrock-agentcore bedrock-agentcore-starter-toolkit`;
-#          Bedrock model access enabled for Claude Sonnet 4.5 in $REGION.
+#          Bedrock model access enabled for Claude Opus 4.8 in $REGION.
 #
 # Usage:
 #   REGION=us-east-1 ./deploy/deploy.sh provision   # create S3 artifact bucket
@@ -25,7 +25,7 @@ AGENT_NAME="${AGENT_NAME:-aqem}"
 TOOLS_AGENT="${TOOLS_AGENT:-aqem_tools}"
 ACCOUNT="$(aws sts get-caller-identity --query Account --output text)"
 BUCKET="${BUCKET:-aqem-artifacts-${ACCOUNT}-${REGION}}"
-MODEL_ID="${MODEL_ID:-us.anthropic.claude-sonnet-4-5-20250929-v1:0}"
+MODEL_ID="${MODEL_ID:-us.anthropic.claude-opus-4-8}"
 export AGENTCORE_SUPPRESS_RECOMMENDATION=1
 
 # The starter toolkit always builds from the root file named `Dockerfile`. The
@@ -120,8 +120,10 @@ case "$cmd" in
 
   destroy)
     echo ">> destroying AgentCore resources for ${AGENT_NAME} and ${TOOLS_AGENT}"
-    agentcore destroy --agent "$AGENT_NAME" || true
-    agentcore destroy --agent "$TOOLS_AGENT" || true
+    # --force skips the interactive y/N prompt; --delete-ecr-repo removes the
+    # per-agent ECR repository too (otherwise it lingers and incurs cost).
+    agentcore destroy --agent "$AGENT_NAME" --force --delete-ecr-repo || true
+    agentcore destroy --agent "$TOOLS_AGENT" --force --delete-ecr-repo || true
     echo ">> emptying + deleting s3://${BUCKET}"
     aws s3 rm "s3://${BUCKET}" --recursive || true
     aws s3api delete-bucket --bucket "$BUCKET" --region "$REGION" || true

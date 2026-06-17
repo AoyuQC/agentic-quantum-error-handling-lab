@@ -233,3 +233,10 @@ skills-lock.json
 
 # ppt-master intermediate build scratch (keep only the deck + notes)
 docs/contents/ppt-master-projects/
+
+# --- CDK web deployment ---
+cdk/node_modules/
+cdk/cdk.out/
+cdk/cdk-outputs.json
+cdk/*.js
+cdk/*.d.ts
