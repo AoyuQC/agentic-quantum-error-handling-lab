@@ -37,12 +37,12 @@ We **cannot access device-level details** (vendor calibration metadata, per-qubi
 | Service | Role |
 |---|---|
 | Bedrock AgentCore **Runtime** | Serverless host for the agent loop + DAG orchestration |
-| Bedrock AgentCore **Gateway** | Exposes Braket/Mitiq and the VLM as MCP tools; routes calls |
-| Bedrock **Guardrails** + custom **Policy** | Deterministic safety/cost audit of every action |
+| Bedrock AgentCore **Gateway** | Exposes Braket/Mitiq and the VLM as MCP tools; routes calls. *As built:* a FastMCP server (`aqem.cloud.mcp_server`) deployed as a second MCP-protocol Runtime; the loop routes to it (SigV4) when `AQEM_TOOL_TRANSPORT=mcp`, else calls the same tool functions in-process (the default). |
+| custom **Policy** (+ Bedrock **Guardrails**) | Deterministic safety/cost audit of every action. *As built:* the authoritative layer is an in-process deterministic validator (`aqem.policy`) running inside the Runtime; Bedrock Guardrails is an optional managed content-safety check on free-text I/O. |
 | AgentCore **Identity / Memory / Observability** | Scoped IAM, session + history context, traces/audit |
-| Amazon **SageMaker** | Real-time endpoint hosting the Ising Calibration VLM (Tool 1) |
+| Amazon **Bedrock** (Claude VLM) | Managed Claude (Sonnet 4.5) inspects plots and drives PASS/retry decisions (Tool 1). *(The original SageMaker-hosted Ising VLM is dropped from scope — see §9.)* |
 | Amazon **Braket** | Simulators, noise models, Program Sets; QPUs later (Tool 2) |
-| Amazon **S3** | Large artifacts: arrays, plots |
+| Amazon **S3** | Large artifacts: arrays, plots, audit trail |
 
 **Strategy — port the *idea*, not the lab pipeline.** Reuse the blueprint's DAG engine and VLM prompt patterns, but apply them to QEM rather than QPU calibration; run them on AgentCore Runtime, expose tools through Gateway, and host the VLM on SageMaker.
 
@@ -108,10 +108,10 @@ We **cannot access device-level details** (vendor calibration metadata, per-qubi
 
 ### 4.2 Role of Each Primitive
 
-- **Runtime** — serverless host for the agent loop and DAG state machine; tolerates long simulator/queue waits; per-session isolation. All side effects exit through Gateway after passing Policy.
-- **Policy** — deterministic layer between "agent proposes" and "tool executes." Implemented as **Bedrock Guardrails** plus a custom validator enforcing the controlled action set (§6.3), the cost/shot budget hard gates (§7), and the no-device-recalibration guard (§2.2). Every decision is audited via Observability.
-- **Gateway** — exposes two MCP tool groups — **Tool 1** (SageMaker Ising VLM, plot diagnosis) and **Tool 2** (Braket execution + Mitiq mitigation) — handling auth, schema, and routing so DAG nodes call tools by name.
-- **SageMaker** — real-time endpoint hosting the Ising Calibration VLM, replacing the NVIDIA NIM/Build API.
+- **Runtime** — serverless host for the agent loop and DAG state machine; tolerates long simulator/queue waits; per-session isolation. All side effects pass Policy first, then run either in-process or via the Gateway.
+- **Policy** — deterministic layer between "agent proposes" and "tool executes." *As built,* this is an in-process validator (`aqem.policy`) running inside the Runtime container — not a managed AWS service — enforcing the controlled action set (§6.3), the cost/shot budget hard gates (§7), and the no-device-recalibration guard (§2.2). **Bedrock Guardrails** sits alongside it as an optional managed content-safety check on free-text I/O; the deterministic Policy is authoritative. Every decision is audited (append-only JSONL, persisted to S3) via Observability. The node → `Policy.check()` → tool order means the Gateway never executes an ungated action.
+- **Gateway** — exposes two MCP tool groups — **Tool 1** (the Claude VLM, plot diagnosis) and **Tool 2** (Braket execution + Mitiq mitigation) — so DAG nodes call tools by name. *As built,* the tools live behind a `ToolClient` seam (`aqem.tools.client`): in-process by default (identical numerics, offline, no AWS), or routed over MCP to a FastMCP server (`aqem.cloud.mcp_server`) when `AQEM_TOOL_TRANSPORT=mcp`. That server is deployed as its own **MCP-protocol AgentCore Runtime** and invoked SigV4-signed at the `bedrock-agentcore` data plane; the server reconstructs the serialized arguments (circuit ↔ OpenQASM, device-by-name, calibration ↔ nested-list matrix) and calls the same tool functions, so the physics is transport-independent.
+- **Bedrock (Claude VLM)** — managed Claude (Sonnet 4.5, `ChatBedrockConverse`) inspects the rendered plots; when the Gateway is in use the VLM runs server-side on the MCP runtime. *(The SageMaker-hosted Ising VLM is dropped from scope — §9.)*
 - **Braket + Mitiq** — simulators and noise models for execution; Program Sets to batch circuit variants cheaply; Mitiq for ZNE/PT/REM.
 - **Identity / Memory / Observability** — scoped IAM (no static creds), session + long-term context (large artifacts in S3), and end-to-end traces of nodes, tool calls, shots/costs, and Policy decisions.
 
@@ -218,9 +218,9 @@ Unlike single-node lab retry, this needs **DAG-aware invalidation** (Runtime log
 | Problem | QPU calibration | Mitiq error-mitigation efficiency | Transplant the VLM+DAG+retry pattern |
 | Characterization | Lab instrument queries | **Empirical probe circuits** | No device-metadata dependence |
 | Hosting | Local CLI / subprocess | Runtime (serverless) | Port DAG engine to a Runtime entrypoint |
-| Tool invocation | In-process calls | Gateway (MCP tools) | Register Braket/Mitiq + VLM as tools |
-| VLM hosting | NVIDIA NIM / Build API | SageMaker endpoint | Deploy Ising Calibration VLM on SageMaker |
-| Safety / audit | Manual / pause-and-suggest | Policy: Guardrails + cost gate | Deterministic pre-dispatch review |
+| Tool invocation | In-process calls | In-process (default) **or** Gateway/MCP (opt-in) | `ToolClient` seam; MCP server live as a 2nd Runtime, routed via `AQEM_TOOL_TRANSPORT=mcp` |
+| VLM hosting | NVIDIA NIM / Build API | Managed Claude on Bedrock | Use Bedrock Claude (Sonnet 4.5); SageMaker Ising VLM dropped (§9) |
+| Safety / audit | Manual / pause-and-suggest | In-process Policy (+ optional Guardrails) + cost gate | Deterministic pre-dispatch review inside the Runtime |
 | Efficiency | n/a | Early-stop + minimal-sufficient mitigation | Budget-gated, target-driven loop |
 | Decoding | n/a | Future work | Excluded from current scope |
 

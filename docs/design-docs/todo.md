@@ -73,7 +73,30 @@ has clean seams (in-process `tools/`, JSON-serializable models).
   efficiency gain reproduced through the cloud handler.
 - **Operator-run (needs an interactive session / IAM):** `agentcore configure` → `deploy` (creates the
   execution role + ECR + Runtime). Fully scripted in `deploy/deploy.sh` + `deploy/RUNBOOK.md`.
-- Tools exposed in-process for now; a Gateway MCP server is a thin future add (seams already in `tools/`).
+- Tools run in-process by default; the **Gateway MCP server** is now implemented (see C6 below).
+
+---
+
+## C6 — Gateway (MCP tools, opt-in)  `[x]`
+Realize the design-doc **Gateway**: expose the `tools/` functions as MCP tools and let the
+loop route through them, without disturbing the in-process default (offline, identical numerics).
+- [x] `tools/client.py`: `ToolClient` seam — `InProcessToolClient` (default) + `McpToolClient`
+      (Streamable HTTP; SigV4 auto-signed against a live `bedrock-agentcore` endpoint) +
+      `make_tool_client` factory keyed on `AQEM_TOOL_TRANSPORT` (`inprocess`|`mcp`)
+- [x] `tools/serde.py`: circuit ↔ OpenQASM (terminal-measure strip) + calibration ↔ numpy ICM,
+      reusing `models.Calibration`/`Strategy`; server-side reconstruction → identical numerics
+- [x] `cloud/mcp_server.py`: FastMCP server exposing `classify_probe`, `validate` (Tool 1, VLM)
+      and `run_probe`, `calibrate_readout`, `run_mitigation` (Tool 2, Braket/Mitiq); `/ping` health
+- [x] Wired `ctx.tools` through `RunContext`/`loop.py`/`runtime.py`; the 4 side-effecting nodes
+      call `ctx.tool_client().*`. **Policy still gates every node before the tool call.**
+- [x] Deploy assets: `agent_mcp.py`, `Dockerfile.mcp`, `deploy.sh` `configure-mcp`/`deploy-mcp`/`deploy-gw`
+- **Accept:** ✅ unit (factory/serde) + integration (`test_mcp_tools.py`: real `McpToolClient` ↔ a
+  subprocess server, incl. a full adaptive loop) green; offline suite unchanged (79 passed).
+- [x] **Live (done 2026-06-13):** MCP server deployed as a 2nd MCP-protocol Runtime
+      (`aqem_tools-hSx7kpBpZX`, READY); `aqem` runtime redeployed with `AQEM_TOOL_TRANSPORT=mcp`
+      + the SigV4 endpoint and `bedrock-agentcore:InvokeAgentRuntime` on its role. `agentcore invoke`
+      returns `"tool_transport": "mcp"`, and the MCP server's CloudWatch logs show the `CallToolRequest`
+      entries — proving the loop ran with every probe/calibrate/mitigate/VLM call routed over the wire.
 
 ---
 
@@ -101,10 +124,22 @@ live per-node progress, and renders the figures + audit trail.
 ---
 
 ## Future work (design-doc §9)
-- [ ] **Live AgentCore deploy** (operator step): run `agentcore configure` → `deploy` to stand up
-      the Runtime endpoint. Interactive and creates an IAM execution role, so it's not done in CI.
-      Fully scripted in `deploy/RUNBOOK.md` + `deploy/deploy.sh`; the handler, S3 path, and live
-      Bedrock VLM are already verified locally.
+- [x] **Live AgentCore deploy** (operator step, done 2026-06-12): `provision` → `configure`
+      (auto-created exec role + ECR) → `deploy` (CodeBuild ARM64) → live `invoke`. Runtime ARN
+      `arn:aws:bedrock-agentcore:us-east-1:002224604296:runtime/aqem-PApaxT47Ho` (endpoint READY).
+      - Patched the auto-created runtime exec role with an inline `aqem-artifacts-s3` policy
+        (`s3:PutObject/GetObject/ListBucket` on the artifact bucket); the toolkit's role already
+        covers Bedrock invoke + `ApplyGuardrail` + CloudWatch/X-Ray.
+      - **Bug fix:** `Dockerfile` installed `pip install -e .` (base deps only) so the container
+        lacked `bedrock-agentcore` → `app = None` → entrypoint fell to the `print(invoke({}))`
+        fallback (ran once, no server on :8080) and the Runtime reported a startup error. Changed
+        to `pip install -e ".[cloud]"` so `BedrockAgentCoreApp` serves the endpoint.
+      - **Verified live through the Runtime endpoint:** `status: "stopped"`, `vlm_used: true`
+        (live Bedrock Claude), adaptive **40k shots** vs baseline **84k** (shot_ratio 2.1, 44k
+        saved), both meet target, `efficiency_gain_demonstrated: true`; artifacts written to
+        `s3://aqem-artifacts-002224604296-us-east-1/aqem/run/`.
+      - Teardown: `./deploy/deploy.sh destroy` (also delete the inline role policy if not removed
+        with the auto-created role).
 - [ ] Real-device execution: Braket local device emulator + QPUs (empirical-probe design carries over)
 - [ ] Neural QEC decoding (NVIDIA Ising-Decoding) on syndrome data
 - [ ] Richer characterization: optionally fold in device calibration metadata when accessible

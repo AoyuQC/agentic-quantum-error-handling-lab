@@ -1,8 +1,9 @@
 """Amazon Bedrock AgentCore Runtime entrypoint.
 
 Wraps the deterministic adaptive QEM loop as an AgentCore Runtime handler. The
-loop, Policy, nodes, and Claude/Bedrock VLM run **in-process** (the tools in
-``aqem.tools`` are the seams a Gateway MCP server would later route to). Large
+loop, Policy, and nodes run in the Runtime; tool calls (Braket/Mitiq + the VLM)
+go in-process by default, or route through the AgentCore **Gateway** (an MCP
+server) when ``AQEM_TOOL_TRANSPORT=mcp`` + ``AQEM_MCP_ENDPOINT`` are set. Large
 artifacts (plots, audit, comparison) go to S3; the response carries the estimate,
 shot ledger, and artifact URIs.
 
@@ -97,6 +98,22 @@ def handle(payload: dict[str, Any]) -> dict[str, Any]:
     ideal = ideal_expectation(circuit, problem.observable)
     vlm = _build_vlm(payload)
 
+    # Tool transport: in-process by default; route through the AgentCore Gateway
+    # (MCP server) when AQEM_TOOL_TRANSPORT=mcp + AQEM_MCP_ENDPOINT are set. The
+    # VLM then runs server-side, so the local client only signals whether VLM
+    # steering was requested.
+    from ..tools.client import McpToolClient, make_tool_client
+
+    transport = payload.get("tool_transport") or _env("AQEM_TOOL_TRANSPORT", "inprocess")
+    mcp_endpoint = payload.get("mcp_endpoint") or _env("AQEM_MCP_ENDPOINT")
+    tools = make_tool_client(
+        device=device,
+        vlm=vlm,
+        device_name=device_name,
+        transport=transport,
+        endpoint=mcp_endpoint,
+    )
+
     run_cfg = {
         "probe_shots": int(payload.get("probe_shots", 2000)),
         "shot_per_base": int(payload.get("shot_per_base", 4000)),
@@ -108,7 +125,7 @@ def handle(payload: dict[str, Any]) -> dict[str, Any]:
 
     record = run_adaptive_loop(
         problem, circuit, device, Budget(shots_total=budget_shots),
-        config=run_cfg, vlm=vlm, seed=seed,
+        config=run_cfg, vlm=vlm, tools=tools, seed=seed,
     )
     adaptive_est = record.final_outputs.get("estimate")
 
@@ -122,6 +139,7 @@ def handle(payload: dict[str, Any]) -> dict[str, Any]:
         "shots_used": record.final_outputs.get("shots_used"),
         "decision": record.final_outputs.get("decision"),
         "vlm_used": vlm is not None,
+        "tool_transport": "mcp" if isinstance(tools, McpToolClient) else "inprocess",
         "artifacts": {},
     }
 

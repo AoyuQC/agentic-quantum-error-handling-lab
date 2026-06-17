@@ -27,6 +27,7 @@ def run_adaptive_loop(
     budget: Budget,
     config: Optional[dict[str, Any]] = None,
     vlm: Any = None,
+    tools: Any = None,
     audit_path: Optional[str] = None,
     max_iterations: int = 8,
     max_retries_per_node: int = 3,
@@ -43,6 +44,9 @@ def run_adaptive_loop(
         config: run knobs (probe_shots, shot_per_base, overhead, rem_twirls,
             use_ideal_for_validation, ...).
         vlm: optional VLM client (Phase L3); None runs rules-only.
+        tools: optional tool transport (``ToolClient``); defaults to the
+            in-process client bound to ``device``/``vlm``. Pass an
+            ``McpToolClient`` to route tool calls through the AgentCore Gateway.
         audit_path: optional JSONL path for the Policy audit log.
         max_iterations: safety bound on adaptive retries.
         max_retries_per_node: per-node retry cap enforced by Policy.
@@ -67,6 +71,10 @@ def run_adaptive_loop(
         audit=AuditLog(audit_path),
         max_retries_per_node=max_retries_per_node,
     )
+    if tools is None:
+        from .tools.client import InProcessToolClient
+
+        tools = InProcessToolClient(device=device, vlm=vlm)
     ctx = RunContext(
         problem=problem,
         circuit=circuit,
@@ -74,6 +82,7 @@ def run_adaptive_loop(
         policy=policy,
         config=dict(config or {}),
         vlm=vlm,
+        tools=tools,
     )
     engine = DAGEngine(default_nodes(), max_iterations=max_iterations, observer=observer)
     return engine.run(ctx)

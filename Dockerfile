@@ -12,10 +12,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libgomp1 libglib2.0-0 libnss3 libexpat1 \
     && rm -rf /var/lib/apt/lists/*
 
-# Install the package first (better layer caching).
+# Install the package first (better layer caching). The [cloud] extra pulls in
+# bedrock-agentcore, which provides the BedrockAgentCoreApp server the Runtime
+# invokes on port 8080 — without it the entrypoint has no server to start.
 COPY pyproject.toml requirements.txt README.md NOTICE ./
 COPY src ./src
-RUN pip install --no-cache-dir -e .
+RUN pip install --no-cache-dir -e ".[cloud]"
 
 ENV AWS_REGION=us-east-1 \
     AQEM_DEVICE=qd_readout_2 \

@@ -16,7 +16,6 @@ from ..dag.context import RunContext
 from ..decision.rules import decide
 from ..models import Decision, DecisionAction, Estimate, NodeResult, Strategy
 from ..problems import ideal_expectation
-from ..tools.vlm_tool import validate_with_vlm
 
 
 class ValidateNode(Node):
@@ -41,12 +40,12 @@ class ValidateNode(Node):
         # ran, i.e. there are >=2 scale points to inspect).
         vlm_verdict = None      # the confidence-gated verdict the decision uses
         vlm_trace = None        # the full verdict (incl. image/prompt/raw) for the UI
-        if ctx.vlm is not None and len(estimate.zne_data) >= 2:
+        tools = ctx.tool_client()
+        if tools.vlm_enabled and len(estimate.zne_data) >= 2:
             from ..reporting.plots import zne_extrapolation_figure
 
             fig = zne_extrapolation_figure(estimate.zne_data, estimate.value)
-            verdict = validate_with_vlm(
-                ctx.vlm,
+            verdict = tools.validate(
                 [{"name": "zne_extrapolation", "format": "plotly", "data": fig}],
                 confidence_threshold,
             )

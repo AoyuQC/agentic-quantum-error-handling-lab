@@ -38,6 +38,7 @@ cloud = [
     "bedrock-agentcore>=1.13",
     "bedrock-agentcore-starter-toolkit>=0.3",
     "langchain-anthropic",
+    "mcp>=1.13",                    # FastMCP server + client for the Gateway tool transport
 ]
 
 # Web UI backend (Phase L5): FastAPI + SSE streaming.

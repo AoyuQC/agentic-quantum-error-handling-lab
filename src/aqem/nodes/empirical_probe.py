@@ -14,8 +14,6 @@ from ..policy import Action, ActionRequest
 from ..probes.circuits import probe_circuits
 from ..probes.classify import classify_probes
 from ..probes.histograms import histogram_figure
-from ..tools.braket_tool import run_probe
-from ..tools.vlm_tool import classify_probe_with_vlm
 
 
 class EmpiricalProbeNode(Node):
@@ -40,7 +38,8 @@ class EmpiricalProbeNode(Node):
         if not decision.approved:
             return NodeResult(node_id=self.node_id, status="failed", error=decision.reason)
 
-        counts = {name: run_probe(circ, ctx.device, shots) for name, circ in probes.items()}
+        tools = ctx.tool_client()
+        counts = {name: tools.run_probe(circ, shots) for name, circ in probes.items()}
         ctx.policy.charge(shots=predicted)
 
         # Deterministic classification always runs (the rules floor / fallback).
@@ -64,9 +63,9 @@ class EmpiricalProbeNode(Node):
         # VLM augmentation: a confident verdict overrides the dominant-error
         # class and may add (never drop) a suggested focus technique.
         vlm_classification = None
-        if ctx.vlm is not None:
+        if tools.vlm_enabled:
             threshold = float(ctx.config.get("vlm_confidence_threshold", 0.5))
-            vlm_classification = classify_probe_with_vlm(ctx.vlm, plots, threshold)
+            vlm_classification = tools.classify_probe(plots, threshold)
             if not vlm_classification.get("degraded"):
                 merged["dominant_error"] = vlm_classification["dominant_error"]
                 for t in vlm_classification.get("suggested_focus", []):

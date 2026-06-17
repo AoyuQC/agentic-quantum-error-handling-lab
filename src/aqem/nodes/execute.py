@@ -11,7 +11,7 @@ from ..dag.node import Node
 from ..dag.context import RunContext
 from ..models import NodeResult, Strategy, Technique
 from ..policy import Action, ActionRequest
-from ..tools.braket_tool import MitigationResult, run_mitigation
+from ..tools.braket_tool import MitigationResult
 
 
 def _action_for(strategy: Strategy) -> Action:
@@ -60,8 +60,8 @@ class ExecuteNode(Node):
                     error="REM strategy but readout_calibrate produced no calibration",
                 )
 
-        result: MitigationResult = run_mitigation(
-            ctx.circuit, ctx.problem.observable, ctx.device, strategy, calibration
+        result: MitigationResult = ctx.tool_client().run_mitigation(
+            ctx.circuit, ctx.problem.observable, strategy, calibration
         )
         ctx.policy.charge(shots=result.shots_used)
 

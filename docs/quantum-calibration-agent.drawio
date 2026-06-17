@@ -245,6 +245,11 @@
           <mxGeometry height="70" width="492" x="52" as="geometry" />
         </mxCell>
 
+        <!-- ===== As-built note (AQEM lab vs the reference pattern) ===== -->
+        <mxCell id="asbuilt-note" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;fontSize=12;fontFamily=Helvetica;fillColor=#FFF8E1;strokeColor=#FF9900;spacing=8;" value="&lt;b&gt;As built (Agentic QEM Lab)&lt;/b&gt;&lt;br&gt;This diagram is the NVIDIA quantum-&lt;i&gt;calibration&lt;/i&gt; reference pattern that AQEM ports. In the shipped lab:&lt;br&gt;&#8226; &lt;b&gt;Policy&lt;/b&gt; is an in-process deterministic validator inside the Runtime (+ optional Bedrock Guardrails), not a separate service.&lt;br&gt;&#8226; &lt;b&gt;Gateway&lt;/b&gt; tools run in-process by default; an opt-in FastMCP server (a 2nd MCP-protocol Runtime) routes them when AQEM_TOOL_TRANSPORT=mcp.&lt;br&gt;&#8226; The VLM is &lt;b&gt;managed Claude on Bedrock&lt;/b&gt; (the SageMaker Ising VLM is out of scope).&lt;br&gt;&#8226; Execution targets Braket &lt;b&gt;simulators / noise models&lt;/b&gt; (QPUs later)." vertex="1" parent="1">
+          <mxGeometry x="1430" y="150" width="420" height="190" as="geometry" />
+        </mxCell>
+
       </root>
     </mxGraphModel>
   </diagram>
