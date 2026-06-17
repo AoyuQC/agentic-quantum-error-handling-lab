@@ -34,6 +34,21 @@ export AGENTCORE_SUPPRESS_RECOMMENDATION=1
 #    Trust policy principal: bedrock-agentcore.amazonaws.com
 ```
 
+> **Auto-create shortcut (used in the live deploy on 2026-06-12).** If you let
+> `agentcore configure` auto-create the execution role (the default — answer the
+> prompts with defaults), the toolkit's role already grants Bedrock `InvokeModel`
+> + `ApplyGuardrail` + CloudWatch/X-Ray. You only need to add the **artifact
+> bucket** permissions it omits:
+>
+> ```bash
+> ROLE=$(aws iam list-roles \
+>   --query "Roles[?contains(RoleName,'AgentCoreSDKRuntime')].RoleName" --output text)
+> aws iam put-role-policy --role-name "$ROLE" --policy-name aqem-artifacts-s3 \
+>   --policy-document '{"Version":"2012-10-17","Statement":[{"Sid":"AqemArtifactBucket",
+>   "Effect":"Allow","Action":["s3:PutObject","s3:GetObject","s3:ListBucket"],
+>   "Resource":["arn:aws:s3:::'"$BUCKET"'","arn:aws:s3:::'"$BUCKET"'/*"]}]}'
+> ```
+
 ## Configure + deploy
 
 ```bash
@@ -90,6 +105,43 @@ Response (abridged):
 - Each response carries the full Policy **audit trail** (also persisted to S3),
   so every action is shown to be controlled-set + budget-gated.
 
+## Gateway (MCP tool server) — optional
+
+By default the loop calls its tools in-process. To route them through an AgentCore
+**Gateway** instead, deploy the FastMCP tool server (`aqem.cloud.mcp_server`,
+entrypoint `agent_mcp.py`) as a second **MCP-protocol Runtime** and point the
+`aqem` runtime at it. The server reconstructs serialized arguments and calls the
+same tool functions, so the numerics are identical to in-process.
+
+```bash
+# 1. Configure + deploy the MCP tool server (uses Dockerfile.mcp, port 8000).
+./deploy/deploy.sh configure-mcp     # agentcore configure -e agent_mcp.py -n aqem_tools --protocol MCP
+./deploy/deploy.sh deploy-mcp        # CodeBuild ARM64 -> ECR -> MCP Runtime
+./deploy/deploy.sh status-mcp        # grab the runtime ARN once READY
+
+# 2. Build the SigV4 endpoint URL from the MCP runtime ARN.
+ARN=<aqem_tools runtime ARN>
+ENC=$(python3 -c "import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1],safe=''))" "$ARN")
+export MCP_ENDPOINT="https://bedrock-agentcore.us-east-1.amazonaws.com/runtimes/${ENC}/invocations?qualifier=DEFAULT"
+
+# 3. Let the aqem runtime's role invoke the MCP runtime (data-plane, SigV4).
+ROLE=$(aws iam list-roles --query "Roles[?contains(RoleName,'AgentCoreSDKRuntime')].RoleName" --output text)
+aws iam put-role-policy --role-name "$ROLE" --policy-name aqem-invoke-mcp \
+  --policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow",
+  "Action":["bedrock-agentcore:InvokeAgentRuntime"],
+  "Resource":["'"$ARN"'","'"$ARN"'/*"]}]}'
+
+# 4. Redeploy aqem with the mcp transport (sets AQEM_TOOL_TRANSPORT=mcp + endpoint).
+./deploy/deploy.sh deploy-gw
+```
+
+Verify: `agentcore invoke --agent aqem '{...}'` returns `"tool_transport": "mcp"`,
+and the `aqem_tools` CloudWatch logs show `CallToolRequest` entries. The MCP runtime
+serves `GET /ping` (health) + `POST /mcp` (Streamable HTTP) on port 8000. Verified
+live 2026-06-13 (`aqem_tools-hSx7kpBpZX`). `McpToolClient` auto-SigV4-signs any
+`bedrock-agentcore` endpoint; a plain local URL (`http://localhost:8000/mcp`) is
+unsigned for development.
+
 ## Local development
 
 ```bash
@@ -97,12 +149,21 @@ agentcore dev                       # local hot-reload server on :8080
 # or, no SDK server, just the handler:
 python -c "from aqem.cloud.runtime import invoke; import json; \
   print(json.dumps(invoke({'device':'qd_readout_2','seed':7}), indent=2, default=str))"
+
+# Gateway tools locally: run the MCP server, then point the loop at it.
+python -m aqem.cloud.mcp_server      # serves http://0.0.0.0:8000/mcp
+AQEM_TOOL_TRANSPORT=mcp AQEM_MCP_ENDPOINT=http://localhost:8000/mcp \
+  python -c "from aqem.cloud.runtime import invoke; print(invoke({'use_vlm': False}))"
 ```
 
 ## Teardown
 
 ```bash
-./deploy/deploy.sh destroy           # agentcore destroy + empty/delete the S3 bucket
+./deploy/deploy.sh destroy           # destroys aqem + aqem_tools runtimes + empties/deletes the S3 bucket
+# If you added inline role policies, remove them too (the auto-created roles are
+# deleted with the runtimes, but delete explicitly if you reused a long-lived role):
+#   aws iam delete-role-policy --role-name "$ROLE" --policy-name aqem-artifacts-s3
+#   aws iam delete-role-policy --role-name "$ROLE" --policy-name aqem-invoke-mcp
 ```
 
 ## Cost notes

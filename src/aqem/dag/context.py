@@ -25,6 +25,8 @@ class RunContext:
         policy: the deterministic Policy gating all side effects.
         config: free-form run configuration (probe shots, baseline knobs, ...).
         vlm: optional VLM client (None until Phase L3 / when offline).
+        tools: the tool transport (in-process by default, MCP/Gateway when opted
+            in) every node calls for probe/calibrate/mitigate/VLM side effects.
         store: artifact store — node_id -> outputs dict; cleared on invalidation.
     """
 
@@ -34,7 +36,22 @@ class RunContext:
     policy: Policy
     config: dict[str, Any] = field(default_factory=dict)
     vlm: Optional[Any] = None
+    tools: Optional[Any] = None
     store: dict[str, dict[str, Any]] = field(default_factory=dict)
+
+    # -- tool transport -----------------------------------------------------
+    def tool_client(self):
+        """The tool transport, defaulting to in-process if none was wired in.
+
+        Lazily builds (and caches) an ``InProcessToolClient`` from ``device`` +
+        ``vlm`` so call sites and tests that construct a context without an
+        explicit ``tools`` keep working with identical (in-process) numerics.
+        """
+        if self.tools is None:
+            from ..tools.client import InProcessToolClient
+
+            self.tools = InProcessToolClient(device=self.device, vlm=self.vlm)
+        return self.tools
 
     # -- artifact helpers ---------------------------------------------------
     def put(self, node_id: str, outputs: dict[str, Any]) -> None:

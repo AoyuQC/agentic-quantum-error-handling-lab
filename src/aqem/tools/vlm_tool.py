@@ -109,22 +109,28 @@ def inspect_structured(
         f"matching this schema:\n{schema_hint}"
     )
 
+    # The rendered images, the prompt, and the raw answer make the agent's
+    # "vision" inspectable in the UI; carry them on every post-render return.
+    trace = {"prompt": full_prompt, "images": images}
+
     try:
         raw = _run_async(vlm.analyze_images(full_prompt, images))
     except Exception as e:
         logger.error("VLM call failed: %s", e)
-        return {"degraded": True, "reason": f"vlm call failed: {e}"}
+        return {"degraded": True, "reason": f"vlm call failed: {e}", **trace}
 
-    parsed = _extract_json(raw if isinstance(raw, str) else str(raw))
+    trace["raw_response"] = raw if isinstance(raw, str) else str(raw)
+
+    parsed = _extract_json(trace["raw_response"])
     if parsed is None:
-        return {"degraded": True, "reason": "response was not valid JSON"}
+        return {"degraded": True, "reason": "response was not valid JSON", **trace}
 
     try:
         model = schema.model_validate(parsed)
     except ValidationError as e:
-        return {"degraded": True, "reason": f"schema validation failed: {e}"}
+        return {"degraded": True, "reason": f"schema validation failed: {e}", **trace}
 
-    result = model.model_dump()
+    result = {**model.model_dump(), **trace}
     if result.get("confidence", 0.0) < confidence_threshold:
         result["degraded"] = True
         result["reason"] = "confidence below threshold"

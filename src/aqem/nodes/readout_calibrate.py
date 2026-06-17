@@ -14,7 +14,7 @@ from ..dag.node import Node
 from ..dag.context import RunContext
 from ..models import Calibration, NodeResult, Strategy, Technique
 from ..policy import Action, ActionRequest
-from ..tools.braket_tool import ReadoutCalibration, calibrate_readout
+from ..tools.braket_tool import ReadoutCalibration
 
 
 class ReadoutCalibrateNode(Node):
@@ -45,7 +45,7 @@ class ReadoutCalibrateNode(Node):
         if not decision.approved:
             return NodeResult(node_id=self.node_id, status="failed", error=decision.reason)
 
-        cal: ReadoutCalibration = calibrate_readout(nq, ctx.device, rem_twirls, shots)
+        cal: ReadoutCalibration = ctx.tool_client().calibrate_readout(nq, rem_twirls, shots)
         ctx.policy.charge(shots=shots)
 
         # Serializable summary for audit/report...

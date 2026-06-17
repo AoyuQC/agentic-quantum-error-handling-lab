@@ -8,6 +8,41 @@ export interface RunRequest {
   seed: number | null;
 }
 
+// Plotly figure: { data, layout } as plain JSON.
+export type Figure = { data: unknown[]; layout: Record<string, unknown> };
+
+// A figure a node produced (what the agent "sees").
+export interface PlotRecord {
+  name: string;
+  format: string; // "plotly"
+  data: Figure;
+}
+
+// The transparent trace of a VLM call: the exact image(s) and prompt sent to
+// Claude, its raw answer, and the parsed structured reasoning. Shapes differ
+// slightly between the probe (evidence/dominant_error) and validate
+// (rationale/recommended_action) calls, so fields are all optional.
+export interface VlmTrace {
+  prompt?: string;
+  images?: string[]; // base64 PNGs
+  raw_response?: string;
+  degraded?: boolean;
+  reason?: string;
+  confidence?: number;
+  // probe classification
+  dominant_error?: string;
+  readout_asymmetry?: boolean;
+  evidence?: string;
+  suggested_focus?: string[];
+  // validate decision
+  extrapolation_monotone?: boolean;
+  has_outliers?: boolean;
+  readout_anomaly?: boolean;
+  improvement_meaningful?: boolean;
+  recommended_action?: string;
+  rationale?: string;
+}
+
 export interface ProgressEvent {
   event: string;
   node?: string;
@@ -17,6 +52,27 @@ export interface ProgressEvent {
   action?: string;
   reason?: string;
   nodes?: string[];
+  // node_done: the node's outputs minus large count arrays (agent reasoning).
+  detail?: Record<string, unknown>;
+  // node_done: figures the node produced (what the agent sees).
+  plots?: PlotRecord[];
+  // decision: provenance + the metric compared to target.
+  source?: string;
+  metric_value?: number | null;
+  error_estimate?: number | null;
+  target?: number;
+}
+
+export interface Experiment {
+  num_qubits: number;
+  description: string;
+  observable_terms: [number, string][];
+  ansatz: string;
+  ideal: number;
+  target_accuracy: number;
+  device: string;
+  budget_shots: number;
+  seed: number | null;
 }
 
 export interface AuditRecord {
@@ -47,12 +103,10 @@ export interface Comparison {
   adaptive_meets_target: boolean;
 }
 
-// Plotly figure: { data, layout } as plain JSON.
-export type Figure = { data: unknown[]; layout: Record<string, unknown> };
-
 export interface RunResult {
   status: string;
   iterations: number;
+  experiment?: Experiment;
   device: string;
   ideal: number;
   target_accuracy: number;
