@@ -65,7 +65,7 @@ def _build_vlm():
             {
                 "provider": os.environ.get("AQEM_VLM_PROVIDER", "bedrock"),
                 "model_id": os.environ.get(
-                    "AQEM_VLM_MODEL_ID", "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+                    "AQEM_VLM_MODEL_ID", "us.anthropic.claude-opus-4-8"
                 ),
                 "endpoint": os.environ.get("AQEM_VLM_ENDPOINT", ""),
                 "region": os.environ.get("AWS_REGION", "us-east-1"),

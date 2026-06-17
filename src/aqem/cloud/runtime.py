@@ -46,7 +46,7 @@ def _build_vlm(payload: dict[str, Any]):
         {
             "provider": "bedrock",
             "model_id": payload.get("vlm_model_id")
-            or _env("AQEM_VLM_MODEL_ID", "us.anthropic.claude-sonnet-4-5-20250929-v1:0"),
+            or _env("AQEM_VLM_MODEL_ID", "us.anthropic.claude-opus-4-8"),
             "region": payload.get("region") or _env("AWS_REGION", "us-east-1"),
             "temperature": 0,
             "max_tokens": 4096,

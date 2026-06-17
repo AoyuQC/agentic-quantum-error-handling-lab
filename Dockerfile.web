@@ -1,0 +1,42 @@
+# Web UI + API image for the Agentic QEM Lab (CloudFront -> ALB -> Fargate).
+# One container serves the built React SPA AND the FastAPI backend on :8000.
+# Unlike the AgentCore `Dockerfile` (ARM64, runs the runtime on :8080), this is
+# a standard linux/amd64 Fargate image. CDK builds it via Dockerfile.web.
+#
+#   docker buildx build --platform linux/amd64 -f Dockerfile.web -t aqem-web .
+
+# --- Stage 1: build the React/Vite frontend into ui/dist ---------------------
+FROM public.ecr.aws/docker/library/node:20-alpine AS ui
+WORKDIR /ui
+COPY ui/package.json ui/package-lock.json* ./
+RUN npm install
+COPY ui/ ./
+RUN npm run build
+
+# --- Stage 2: Python runtime serving UI (ui/dist) + API (FastAPI) ------------
+FROM --platform=linux/amd64 public.ecr.aws/docker/library/python:3.12-slim
+
+WORKDIR /app
+
+# System deps: kaleido 0.2.1 bundles chromium but needs a few shared libs to
+# render the Plotly figures the UI shows.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libgomp1 libglib2.0-0 libnss3 libexpat1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install the package first for better layer caching. The [web] extra pulls in
+# FastAPI + uvicorn + sse-starlette (the aqem-web entrypoint).
+COPY pyproject.toml requirements.txt README.md NOTICE ./
+COPY src ./src
+RUN pip install --no-cache-dir -e ".[web]"
+
+# server.py resolves the SPA at <repo>/ui/dist (parents[3]/ui/dist == /app/ui/dist).
+COPY --from=ui /ui/dist ./ui/dist
+
+ENV AWS_REGION=us-east-1 \
+    AQEM_DEVICE=qd_readout_2 \
+    PYTHONUNBUFFERED=1
+
+# Uvicorn binds 0.0.0.0:8000 (see aqem.web.server:main); the ALB targets :8000.
+EXPOSE 8000
+CMD ["aqem-web"]
