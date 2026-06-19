@@ -59,6 +59,24 @@ def test_decide_ignores_low_confidence_vlm():
     assert d.source == "rules"
 
 
+def test_vlm_stop_recommendation_does_not_end_the_loop():
+    # The VLM is an analysis tool, not the decider: a "stop" recommendation must
+    # never STOP the loop. Far-from-target falls through to numeric escalation.
+    verdict = {"recommended_action": "stop", "confidence": 0.95}
+    d = decide(error_bar=0.5, error_estimate=0.5, target_accuracy=0.05,
+               strategy=Strategy(), vlm_verdict=verdict)
+    assert d.action == DecisionAction.RETRY_STRATEGY.value
+
+
+def test_vlm_retry_recommendation_is_still_honored():
+    # A retry recommendation (not stop) is a legitimate steer the rules accept.
+    verdict = {"recommended_action": "retry_shots", "confidence": 0.95}
+    d = decide(error_bar=0.5, error_estimate=0.5, target_accuracy=0.05,
+               strategy=Strategy(), vlm_verdict=verdict)
+    assert d.action == DecisionAction.RETRY_SHOTS.value
+    assert d.source == "vlm+rules"
+
+
 def test_escalate_adds_zne_then_pt_then_advances_factory():
     s = Strategy(techniques=[Technique.REM.value], zne_factory="Linear")
     s = escalate_strategy(s)
