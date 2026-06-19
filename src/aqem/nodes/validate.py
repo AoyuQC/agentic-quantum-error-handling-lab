@@ -14,7 +14,7 @@ from __future__ import annotations
 from ..dag.node import Node
 from ..dag.context import RunContext
 from ..decision.rules import decide
-from ..models import Decision, DecisionAction, Estimate, NodeResult, Strategy
+from ..models import Decision, DecisionAction, Estimate, NodeResult, Strategy  # noqa: F401
 from ..problems import ideal_expectation
 
 
@@ -53,14 +53,66 @@ class ValidateNode(Node):
             if not verdict.get("degraded"):
                 vlm_verdict = verdict
 
-        decision: Decision = decide(
-            error_bar=estimate.error_bar,
-            error_estimate=error_estimate,
-            target_accuracy=target,
-            strategy=strategy,
-            vlm_verdict=vlm_verdict,
-            confidence_threshold=confidence_threshold,
-        )
+        # The orchestration agent is the decider; the deterministic rules are
+        # the fallback. Record this attempt into the running history first so
+        # the agent can reason over the trajectory (and so we can detect a
+        # plateau). The VLM is demoted to an analysis tool: its verdict is an
+        # *input* to the agent and may steer a retry, but never ends the loop.
+        metric = error_estimate if error_estimate is not None else estimate.error_bar
+        attempts: list = list(ctx.config.get("_attempts", []))
+        attempts.append({
+            "iteration": len(attempts) + 1,
+            "techniques": list(strategy.techniques),
+            "zne_factory": strategy.zne_factory,
+            "zne_scale_factors": list(strategy.zne_scale_factors),
+            "error": error_estimate,
+            "error_bar": estimate.error_bar,
+            "shots_used": ctx.policy.budget.shots_used,
+        })
+        ctx.config["_attempts"] = attempts
+
+        decision: Decision = None  # type: ignore[assignment]
+        agent_strategy = None
+        # Target met is a deterministic STOP that needs no agent call.
+        if metric <= target:
+            decision = Decision(
+                action=DecisionAction.STOP.value,
+                reason=f"target met: {metric:.4f} <= {target:.4f}",
+                source="rules",
+            )
+        elif tools.vlm_enabled:
+            from ..decision.agent import propose_decision
+
+            proposed = propose_decision(
+                ctx.vlm,
+                target=target,
+                current_error=error_estimate,
+                current_error_bar=estimate.error_bar,
+                current_strategy=strategy,
+                attempts=attempts,
+                vlm_analysis=vlm_verdict,
+                remaining_shots=ctx.policy.budget.remaining_shots(),
+                iteration=len(attempts),
+                max_iterations=int(ctx.config.get("max_iterations", 8)),
+                confidence_threshold=confidence_threshold,
+            )
+            if proposed is not None:
+                decision, agent_strategy = proposed
+                if agent_strategy is not None:
+                    # The strategy_select node applies this on the retry re-run.
+                    ctx.config["_agent_strategy"] = agent_strategy.to_dict()
+
+        # Fallback: deterministic rules (no agent, agent abstained/low-conf, or
+        # VLM disabled). The VLM verdict may still steer *which* retry to run.
+        if decision is None:
+            decision = decide(
+                error_bar=estimate.error_bar,
+                error_estimate=error_estimate,
+                target_accuracy=target,
+                strategy=strategy,
+                vlm_verdict=vlm_verdict,
+                confidence_threshold=confidence_threshold,
+            )
 
         # Guard: if we're out of budget for any further runs, stop and report.
         if decision.action != DecisionAction.STOP.value:

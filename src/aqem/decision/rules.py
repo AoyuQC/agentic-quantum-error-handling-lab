@@ -140,9 +140,17 @@ def _decide_from_vlm(verdict: dict[str, Any], strategy: Strategy) -> Optional[De
         )
 
     # An explicit recommendation, if the structured keys above didn't fire.
+    # The VLM is an analysis tool, not the decider: it may steer *which retry*
+    # to run, but it must never end the loop. A "stop" recommendation is
+    # therefore ignored here — only the orchestrator (or the numeric target
+    # check) may STOP. See docs/quantum-calibration-agent.drawio.
     rec = verdict.get("recommended_action")
-    valid = {a.value for a in DecisionAction}
-    if rec in valid:
+    retry_actions = {
+        DecisionAction.RETRY_SHOTS.value,
+        DecisionAction.RETRY_CALIBRATION.value,
+        DecisionAction.RETRY_STRATEGY.value,
+    }
+    if rec in retry_actions:
         return Decision(action=rec, reason="VLM: explicit recommendation", source=src)
     return None
 

@@ -75,12 +75,16 @@ def run_adaptive_loop(
         from .tools.client import InProcessToolClient
 
         tools = InProcessToolClient(device=device, vlm=vlm)
+    run_config = dict(config or {})
+    # Surface the iteration cap so the orchestration agent can reason about how
+    # much budget/headroom remains when deciding whether to stop.
+    run_config.setdefault("max_iterations", max_iterations)
     ctx = RunContext(
         problem=problem,
         circuit=circuit,
         device=device,
         policy=policy,
-        config=dict(config or {}),
+        config=run_config,
         vlm=vlm,
         tools=tools,
     )
