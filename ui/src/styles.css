@@ -21,6 +21,21 @@ body {
 
 .mono { font-family: ui-monospace, monospace; font-variant-numeric: tabular-nums; }
 
+/* ---- top brand bar: the Dr. Qubit logo, above the whole console ---- */
+.topbar {
+  display: flex; align-items: center; gap: 16px;
+  max-width: 1320px; margin: 0 auto; padding: 22px 24px 6px;
+}
+.tb-avatar { font-size: 40px; flex: none; animation: bob 2.4s ease-in-out infinite; }
+.tb-text { min-width: 0; }
+.tb-name {
+  margin: 0; font-size: 30px; font-weight: 800; letter-spacing: -.01em; line-height: 1.1;
+  background: linear-gradient(90deg, var(--accent-2), var(--accent));
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.tb-tag { margin: 3px 0 0; color: var(--muted); font-size: 13.5px; }
+.tb-tag em { color: var(--ink); font-style: normal; font-weight: 600; }
+
 /* ---- console: side rail + center stage ---- */
 .console {
   display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 24px;
@@ -28,9 +43,6 @@ body {
 }
 .rail { position: sticky; top: 24px; display: flex; flex-direction: column; gap: 16px; }
 .stage { min-width: 0; }
-
-.rail-brand h1 { margin: 0 0 4px; font-size: 19px; }
-.rail-brand p { margin: 0; color: var(--muted); font-size: 12.5px; line-height: 1.5; }
 
 .rail-panel { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px; }
 .rail-panel h3 { margin: 0 0 10px; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
@@ -48,6 +60,35 @@ button.run {
   background: var(--accent); color: #06281d; font-weight: 700; font-size: 14px; cursor: pointer; white-space: nowrap;
 }
 button.run:disabled { opacity: .5; cursor: not-allowed; }
+
+/* cache hint + clear control under the Run button */
+.cache-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; }
+.cache-hint { font-size: 11px; color: var(--muted); }
+.cache-hint.hit { color: var(--accent); font-weight: 600; }
+.cache-clear {
+  padding: 4px 8px; border-radius: 6px; background: transparent;
+  border: 1px solid var(--border); color: var(--muted); font-size: 11px; cursor: pointer;
+}
+.cache-clear:hover:not(:disabled) { border-color: var(--danger); color: var(--danger); }
+.cache-clear:disabled { opacity: .5; cursor: not-allowed; }
+
+/* replay signal in the top bar while a cached run streams back */
+.replay-badge {
+  margin-left: auto; flex: none; padding: 6px 12px; border-radius: 999px;
+  background: rgba(99,102,241,.15); border: 1px solid var(--accent-2);
+  color: var(--accent-2); font-size: 12.5px; font-weight: 700;
+  animation: pulse 1.6s ease-in-out infinite;
+}
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .55; } }
+
+/* folded "Advanced" run toggles (both default on) */
+.adv { margin: 0 0 10px; }
+.adv > summary { cursor: pointer; font-size: 11px; text-transform: uppercase;
+  letter-spacing: .06em; color: var(--muted); margin-bottom: 8px; list-style: none; }
+.adv > summary::-webkit-details-marker { display: none; }
+.adv > summary::before { content: "▸ "; }
+.adv[open] > summary::before { content: "▾ "; }
+.tg-hint { color: var(--muted); font-weight: 400; }
 
 .panel {
   background: var(--panel);
@@ -98,7 +139,8 @@ button.run:disabled { opacity: .5; cursor: not-allowed; }
   display: flex; align-items: center; gap: 16px; margin: -10px 0 22px;
   background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 10px 14px;
 }
-.conv-svg { flex: 1 1 auto; width: 100%; height: 64px; min-width: 0; }
+.conv-svg { flex: 1 1 auto; width: 100%; max-width: 520px; height: auto;
+  aspect-ratio: 360 / 64; min-width: 0; }
 .conv-target { stroke: var(--muted); stroke-width: 1; opacity: .6; }
 .conv-target-label { fill: var(--muted); font-size: 10px; font-family: ui-monospace, monospace; }
 .conv-line { stroke: var(--accent-2); stroke-width: 2; }

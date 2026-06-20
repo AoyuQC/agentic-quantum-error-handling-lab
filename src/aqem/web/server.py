@@ -18,8 +18,10 @@ comparison, and the Policy audit trail.
 from __future__ import annotations
 
 import json
+import os
 import queue
 import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -34,8 +36,18 @@ from ..models import Budget, Estimate
 from ..problems import default_problem, ideal_expectation
 from ..reporting.efficiency import compare
 from ..reporting.plots import accuracy_vs_shots_figure, zne_extrapolation_figure
+from .cache import RECORDING_VERSION, cache_key, make_run_cache
 
 app = FastAPI(title="AQEM Server")
+
+# Record/replay cache: the first run of a setup is recorded; a repeat is replayed
+# frame-for-frame at the original pace. Backed by S3 when AQEM_CACHE is set,
+# else a local directory. Built once at import.
+_CACHE = make_run_cache()
+
+# When replaying, clamp the gap re-created between two recorded frames so a long
+# Bedrock stall in the original run doesn't make the replay hang. Seconds.
+_REPLAY_MAX_GAP = float(os.environ.get("AQEM_REPLAY_MAX_GAP", "4.0"))
 
 app.add_middleware(
     CORSMiddleware,
@@ -94,10 +106,47 @@ def _experiment(problem, circuit, ideal: float, req: RunRequest) -> dict[str, An
 
 
 def _run_stream(req: RunRequest):
-    """Generator yielding SSE frames for one adaptive run."""
+    """Dispatch one run: replay a cached recording, or run fresh and record it.
+
+    Both paths first emit a ``cache_status`` progress frame so the UI knows
+    whether it is watching a live run or a replay; the remaining frames are
+    byte-identical, so the rendering path is the same either way.
+    """
+    key = cache_key(req.model_dump())
+    recording = _CACHE.get(key)
+    if recording is not None:
+        yield _sse("progress", {"event": "cache_status", "cached": True})
+        yield from _replay(recording)
+    else:
+        yield _sse("progress", {"event": "cache_status", "cached": False})
+        yield from _run_fresh(req, key)
+
+
+def _replay(recording: dict[str, Any]):
+    """Re-emit a recorded run's frames at (clamped) original pacing."""
+    prev_t = 0.0
+    for frame in recording.get("frames", []):
+        t = float(frame.get("t", prev_t))
+        gap = min(max(t - prev_t, 0.0), _REPLAY_MAX_GAP)
+        if gap:
+            time.sleep(gap)
+        prev_t = t
+        yield _sse(frame["event"], frame["data"])
+    yield _sse("done", {})
+
+
+def _run_fresh(req: RunRequest, key: str):
+    """Generator yielding SSE frames for one live adaptive run, recording them.
+
+    Every emitted frame is captured with a monotonic offset from run start; on a
+    successful run the recording is written to the cache so the identical setup
+    replays next time. A failed run is not cached.
+    """
     from ..config import resolve_device
 
     events: "queue.Queue[Any]" = queue.Queue()
+    start = time.monotonic()
+    frames: list[dict[str, Any]] = []
 
     def observer(ev: dict) -> None:
         events.put(ev)
@@ -116,8 +165,6 @@ def _run_stream(req: RunRequest):
 
             vlm = None
             if req.use_vlm:
-                import os
-
                 from ..vlm import get_vlm_client
 
                 config: dict[str, Any] = {"provider": "bedrock"}
@@ -147,17 +194,35 @@ def _run_stream(req: RunRequest):
     t = threading.Thread(target=worker, daemon=True)
     t.start()
 
+    def record_frame(event: str, data: Any) -> str:
+        frames.append({"t": round(time.monotonic() - start, 3), "event": event, "data": data})
+        return _sse(event, data)
+
     while True:
         item = events.get()
         if item is _SENTINEL:
             break
-        yield _sse("progress", item)
+        yield record_frame("progress", item)
 
     if "error" in result_box:
+        # Don't cache failures — a transient error shouldn't be pinned.
         yield _sse("error", {"message": result_box["error"]})
-    else:
-        yield _sse("result", result_box["result"])
+        yield _sse("done", {})
+        return
+
+    yield record_frame("result", result_box["result"])
     yield _sse("done", {})
+
+    # Persist the full recording for replay. Never let cache I/O break the run.
+    try:
+        _CACHE.put(key, {
+            "version": RECORDING_VERSION,
+            "key": key,
+            "request": req.model_dump(),
+            "frames": frames,
+        })
+    except Exception:
+        pass
 
 
 def _build_result(record, problem, circuit, device, ideal, req: RunRequest) -> dict[str, Any]:
@@ -216,6 +281,19 @@ def _build_result(record, problem, circuit, device, ideal, req: RunRequest) -> d
 @app.post("/api/run")
 def run(req: RunRequest) -> StreamingResponse:
     return StreamingResponse(_run_stream(req), media_type="text/event-stream")
+
+
+@app.post("/api/cache/check")
+def cache_check(req: RunRequest) -> dict[str, Any]:
+    """Report whether the given setup is already recorded (for the UI badge)."""
+    key = cache_key(req.model_dump())
+    return {"cached": _CACHE.get(key) is not None, "key": key}
+
+
+@app.delete("/api/cache")
+def cache_clear() -> dict[str, int]:
+    """Remove all recorded runs; return how many were cleared."""
+    return {"cleared": _CACHE.clear()}
 
 
 # Serve the built frontend (if present) so a single process serves UI + API.
