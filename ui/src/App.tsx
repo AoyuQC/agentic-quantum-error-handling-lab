@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { fetchDevices, runStream } from "./api";
+import { checkCache, clearCache, fetchDevices, runStream } from "./api";
 import { Chart } from "./Chart";
 import type {
   Experiment,
@@ -47,18 +47,6 @@ const NODE_META: Record<string, { n: string; icon: string; label: string }> = {
   validate: { n: "⑦", icon: "✅", label: "Validate" },
   report: { n: "⑧", icon: "📄", label: "Report" },
 };
-
-// The per-iteration pipeline order (report runs once at the very end, so it is
-// excluded here). Used to size the progress bar within an iteration.
-const PIPELINE = [
-  "empirical_probe",
-  "strategy_select",
-  "readout_calibrate",
-  "circuit_generate",
-  "execute",
-  "post_process",
-  "validate",
-];
 
 // Dr. Qubit's first-person narration per running step. Each node-id maps to a
 // few phrasings; the live one is picked by iteration index (deterministic — no
@@ -118,7 +106,7 @@ export default function App() {
     target_accuracy: 0.06,
     device: "qd_readout_2",
     budget_shots: 2_000_000,
-    use_vlm: false,
+    use_vlm: true,
     compare_baseline: true,
     seed: 7,
   });
@@ -138,12 +126,27 @@ export default function App() {
   const [settledIter, setSettledIter] = useState<number | null>(null);
   const [result, setResult] = useState<RunResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Whether the current run is a replay of a recorded run (set from the leading
+  // cache_status frame). null = unknown / live run not yet classified.
+  const [replaying, setReplaying] = useState<boolean | null>(null);
+  // Whether the current setup is already recorded (drives the rail hint).
+  const [cached, setCached] = useState<boolean>(false);
 
   useEffect(() => {
     fetchDevices()
       .then((d) => setDevices(d.devices))
       .catch(() => setDevices(["qd_readout_2", "qd_total"]));
   }, []);
+
+  // Refresh the "cached" hint whenever the setup changes (and on mount). The
+  // backend key is the full RunRequest, so any field edit re-checks.
+  useEffect(() => {
+    let live = true;
+    checkCache(req)
+      .then((r) => { if (live) setCached(r.cached); })
+      .catch(() => { if (live) setCached(false); });
+    return () => { live = false; };
+  }, [req]);
 
   function set<K extends keyof RunRequest>(k: K, v: RunRequest[K]) {
     setReq((r) => ({ ...r, [k]: v }));
@@ -168,6 +171,9 @@ export default function App() {
 
   function onProgress(ev: ProgressEvent) {
     switch (ev.event) {
+      case "cache_status":
+        setReplaying(!!ev.cached);
+        break;
       case "experiment":
         setExperiment(ev as unknown as Experiment);
         break;
@@ -246,13 +252,26 @@ export default function App() {
     setExpandedIter(null);
     setDisplayIter(null);
     setSettledIter(null);
+    setReplaying(null);
     try {
       await runStream(req, { onProgress, onResult: setResult, onError: setError });
     } catch (e) {
       setError(String(e));
     } finally {
       setRunning(false);
+      // A fresh run just recorded this setup — reflect it in the hint.
+      checkCache(req).then((r) => setCached(r.cached)).catch(() => {});
     }
+  }
+
+  async function onClearCache() {
+    try {
+      await clearCache();
+    } catch {
+      /* ignore — best-effort */
+    }
+    setCached(false);
+    setReplaying(null);
   }
 
   // IterationStage signals up (via onSettled) when its walkthrough reaches the
@@ -288,16 +307,47 @@ export default function App() {
           : null;
   const shown = timeline.find((g) => g.iteration === shownIter) || null;
 
-  return (
-    <div className="console">
-      {/* ---- side rail: settings · experiment · past iterations ---- */}
-      <aside className="rail">
-        <div className="rail-brand">
-          <h1>Agentic QEM</h1>
-          <p>An LLM agent that sees, reasons, and decides — like a quantum researcher.</p>
-        </div>
+  // Everything in the UI is paced by the center-stage walkthrough, not the
+  // (much faster) engine stream: an iteration is only "revealed" once the paced
+  // display has brought it on stage. `displayIter` is that monotonic high-water
+  // mark (it advances only after the prior walkthrough settles + ITER_PAUSE_MS,
+  // and freezes while the user has pinned an iteration). So the rail never shows
+  // an iteration the center hasn't reached yet.
+  const revealedIter = displayIter;
+  const revealed = timeline.filter((g) => revealedIter == null || g.iteration <= revealedIter);
 
-        <div className="rail-panel">
+  // The walkthrough deliberately trails the engine, so `running` (the SSE
+  // stream) goes false well before the last step has played out. The agent is
+  // still "busy" from the user's view until the final iteration's walkthrough
+  // has settled on its terminal step — keep the Run button locked until then.
+  // A user-pinned iteration means they've taken manual control, so release.
+  const lastIter = timeline.length ? timeline[timeline.length - 1].iteration : null;
+  const walkthroughComplete =
+    lastIter == null || settledIter === lastIter || expandedIter != null || error != null;
+  const busy = running || !walkthroughComplete;
+
+  return (
+    <div className="app">
+      {/* ---- top brand bar: the Dr. Qubit logo, spanning the whole UI ---- */}
+      <header className="topbar">
+        <span className="tb-avatar">🧑‍🔬</span>
+        <div className="tb-text">
+          <h1 className="tb-name">Dr. Qubit</h1>
+          <p className="tb-tag">
+            Agentic Quantum Error Mitigation — <em>sees · reasons · decides</em>
+          </p>
+        </div>
+        {replaying && (
+          <span className="replay-badge" title="Re-playing a previously recorded run at its original pace">
+            ⏪ Replaying cached run
+          </span>
+        )}
+      </header>
+
+      <div className="console">
+        {/* ---- side rail: settings · experiment · past iterations ---- */}
+        <aside className="rail">
+          <div className="rail-panel">
           <h3>Run</h3>
           <label>Device
             <select value={req.device} onChange={(e) => set("device", e.target.value)} disabled={running}>
@@ -318,28 +368,39 @@ export default function App() {
                 onChange={(e) => set("seed", +e.target.value)} />
             </label>
           </div>
-          <label className="tg">
-            <input type="checkbox" checked={req.use_vlm} disabled={running}
-              onChange={(e) => set("use_vlm", e.target.checked)} />
-            Claude VLM
-          </label>
-          <label className="tg">
-            <input type="checkbox" checked={req.compare_baseline} disabled={running}
-              onChange={(e) => set("compare_baseline", e.target.checked)} />
-            vs full-stack baseline
-          </label>
-          <button className="run" onClick={start} disabled={running}>
-            {running ? "Running…" : "▶ Run agent loop"}
+          <details className="adv">
+            <summary>Advanced</summary>
+            <label className="tg">
+              <input type="checkbox" checked={req.use_vlm} disabled={running}
+                onChange={(e) => set("use_vlm", e.target.checked)} />
+              Vision steering <span className="tg-hint">(Dr. Qubit reads the plots)</span>
+            </label>
+            <label className="tg">
+              <input type="checkbox" checked={req.compare_baseline} disabled={running}
+                onChange={(e) => set("compare_baseline", e.target.checked)} />
+              Compare vs full-stack baseline
+            </label>
+          </details>
+          <button className="run" onClick={start} disabled={busy}>
+            {running ? "Running…" : busy ? "Finishing…" : "▶ Run agent loop"}
           </button>
+          <div className="cache-row">
+            <span className={`cache-hint ${cached ? "hit" : ""}`}>
+              {cached ? "⚡ cached — will replay" : "● will record this run"}
+            </span>
+            <button className="cache-clear" onClick={onClearCache} disabled={running} title="Clear all recorded runs">
+              Clear cache
+            </button>
+          </div>
         </div>
 
         {experiment && <ExperimentBanner exp={experiment} vlm={req.use_vlm} />}
 
-        {timeline.length > 0 && (
+        {revealed.length > 0 && (
           <div className="rail-panel">
             <h3>Iterations</h3>
             <div className="iter-list">
-              {timeline.map((g) => (
+              {revealed.map((g) => (
                 <button
                   key={g.iteration}
                   className={`iter-chip ${g.iteration === shownIter ? "active" : ""} ${
@@ -369,13 +430,10 @@ export default function App() {
         )}
 
         {timeline.length > 0 && (
-          <ProgressBar timeline={timeline} running={running} done={!!result || !!error} />
-        )}
-
-        {timeline.length > 0 && (
           <Convergence
-            timeline={timeline}
+            timeline={shownIter != null ? timeline.filter((g) => g.iteration <= shownIter) : timeline}
             target={experiment?.target_accuracy ?? req.target_accuracy}
+            ideal={experiment?.ideal}
           />
         )}
 
@@ -385,11 +443,15 @@ export default function App() {
             group={shown}
             vlm={req.use_vlm}
             onSettled={handleSettled}
+            // A user-pinned iteration is shown in full at once (no slow
+            // re-walk); the paced walkthrough is only for the live auto-advance.
+            instant={expandedIter === shown.iteration}
           />
         )}
 
         {result && <Results result={result} />}
       </main>
+      </div>
     </div>
   );
 }
@@ -404,7 +466,7 @@ function ExperimentBanner({ exp, vlm }: { exp: Experiment; vlm: boolean }) {
           <div className="exp-sub mono">{formatObservable(exp.observable_terms)}</div>
         </div>
         <span className={`badge ${vlm ? "good" : ""}`} style={{ marginLeft: "auto" }}>
-          {vlm ? "Claude VLM steering" : "rules-only"}
+          {vlm ? "Dr. Qubit steering" : "rules-only"}
         </span>
       </div>
       <div className="exp-facts">
@@ -413,38 +475,6 @@ function ExperimentBanner({ exp, vlm }: { exp: Experiment; vlm: boolean }) {
         <div><span className="k">Target</span><span className="v mono">≤ {exp.target_accuracy}</span></div>
         <div><span className="k">Device</span><span className="v mono">{exp.device}</span></div>
         <div><span className="k">Budget</span><span className="v mono">{exp.budget_shots.toLocaleString()} sh</span></div>
-      </div>
-    </div>
-  );
-}
-
-// Determinate progress across all iterations: each iteration contributes the
-// fraction of its pipeline nodes that have completed.
-function ProgressBar({ timeline, running, done }: { timeline: IterGroup[]; running: boolean; done: boolean }) {
-  const cur = timeline[timeline.length - 1];
-  const stopped = timeline.some((g) => g.decision?.action === "stop");
-  // Per-iteration completion is (# done nodes / pipeline length); the overall
-  // bar shows the current iteration's progress (each iteration is a fresh pass).
-  const doneNodes = cur ? cur.nodes.filter((n) => n.status === "done").length : 0;
-  const frac = done || stopped ? 1 : Math.min(doneNodes / PIPELINE.length, 0.98);
-  const runningNode = cur?.nodes.find((n) => n.status === "running");
-  const label = done || stopped
-    ? "complete"
-    : runningNode
-      ? `${NODE_META[runningNode.node]?.label || runningNode.node}…`
-      : "starting…";
-  return (
-    <div className="progress">
-      <div className="progress-meta">
-        <span>Iteration {cur?.iteration ?? 1}</span>
-        <span className="progress-node">{label}</span>
-        <span className="progress-pct">{Math.round(frac * 100)}%</span>
-      </div>
-      <div className="progress-track">
-        <div
-          className={`progress-fill ${done || stopped ? "ok" : ""} ${running && !done ? "live" : ""}`}
-          style={{ width: `${frac * 100}%` }}
-        />
       </div>
     </div>
   );
@@ -475,10 +505,12 @@ function IterationStage({
   group,
   vlm,
   onSettled,
+  instant = false,
 }: {
   group: IterGroup;
   vlm: boolean;
   onSettled?: (iteration: number) => void;
+  instant?: boolean; // jump straight to the terminal step (user-pinned view)
 }) {
   const met = group.decision?.action === "stop";
   const nodes = group.nodes;
@@ -487,17 +519,27 @@ function IterationStage({
   // on each finished step, fading it out, then fading the next one in — so it
   // trails the (often much faster) engine at a human-watchable pace. Each step
   // the walkthrough leaves behind drops into a folded list at the bottom.
-  const [idx, setIdx] = useState(0);
+  // When `instant` (a user-pinned, already-complete iteration) we skip straight
+  // to the last step so the full detail is available immediately.
+  const [idx, setIdx] = useState(instant ? Math.max(nodes.length - 1, 0) : 0);
   const [visible, setVisible] = useState(true);
 
   const current = nodes[idx];
   const hasNext = idx < nodes.length - 1;
   const finished = !!current && (current.status === "done" || current.status === "failed");
 
+  // If pinned, keep pace with any late-arriving nodes by pinning to the last.
+  useEffect(() => {
+    if (instant) {
+      setIdx(Math.max(nodes.length - 1, 0));
+      setVisible(true);
+    }
+  }, [instant, nodes.length]);
+
   useEffect(() => {
     // Advance only once the shown step is finished AND a next step has arrived.
     // Hold it briefly, fade out, then step forward and fade the next one in.
-    if (!finished || !hasNext) return;
+    if (instant || !finished || !hasNext) return;
     const fadeOut = setTimeout(() => setVisible(false), STEP_HOLD_MS);
     const advance = setTimeout(() => {
       setIdx((i) => Math.min(i + 1, nodes.length - 1));
@@ -507,7 +549,7 @@ function IterationStage({
       clearTimeout(fadeOut);
       clearTimeout(advance);
     };
-  }, [finished, hasNext, idx, nodes.length]);
+  }, [instant, finished, hasNext, idx, nodes.length]);
 
   // Steps the walkthrough has already left behind, newest-first — folded at the
   // bottom, one click from full detail.
@@ -731,9 +773,21 @@ function stepSummary(entry: NodeEntry): string {
 
 // Live error→target convergence, rendered just under the progress bar. A light
 // inline SVG sparkline (no Plotly) so it's always-on and cheap.
-function Convergence({ timeline, target }: { timeline: IterGroup[]; target: number }) {
+function Convergence({ timeline, target, ideal }: { timeline: IterGroup[]; target: number; ideal?: number }) {
+  // Plot a point as soon as the error for an iteration is known. The
+  // authoritative value is the validate node's metric (carried on the decision
+  // event), but that only arrives once validate finishes — i.e. as the last
+  // step fades. So fall back to the post_process estimate (|value − ideal|,
+  // the same quantity validate recomputes) which lands one step earlier, so
+  // the trace updates while the iteration is still on stage.
+  const errorFor = (g: IterGroup): number | undefined => {
+    if (typeof g.decision?.metric_value === "number") return g.decision.metric_value;
+    if (typeof ideal !== "number") return undefined;
+    const est = (g.nodes.find((n) => n.node === "post_process")?.detail as any)?.estimate;
+    return typeof est?.value === "number" ? Math.abs(est.value - ideal) : undefined;
+  };
   const points = timeline
-    .map((g) => ({ iter: g.iteration, err: g.decision?.metric_value }))
+    .map((g) => ({ iter: g.iteration, err: errorFor(g) }))
     .filter((p): p is { iter: number; err: number } => typeof p.err === "number");
   if (points.length === 0) return null;
 
@@ -756,7 +810,7 @@ function Convergence({ timeline, target }: { timeline: IterGroup[]; target: numb
 
   return (
     <div className="convergence">
-      <svg className="conv-svg" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
+      <svg className="conv-svg" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet">
         {/* target line */}
         <line x1={0} y1={targetY} x2={W} y2={targetY} className="conv-target" strokeDasharray="4 4" />
         <text x={W - 2} y={targetY - 3} className="conv-target-label" textAnchor="end">
@@ -842,7 +896,7 @@ function NodeBody({
         <Sees>
           {images.length > 0 ? (
             <>
-              <p className="see-note">Exact image sent to Claude:</p>
+              <p className="see-note">Exact image Dr. Qubit sees:</p>
               <div className="node-figs">
                 {images.map((img, i) => (
                   <Chart key={i} image={img} title={labels[i]} bare />
@@ -864,13 +918,13 @@ function NodeBody({
           </p>
           {/* Live: Claude's analysis as it streams, before the parsed verdict lands. */}
           {llm?.vlm && !usedVlm && (
-            <LiveStream text={llm.vlm} label="Claude (vision)" streaming={entry.status === "running"} />
+            <LiveStream text={llm.vlm} label="Dr. Qubit · vision" streaming={entry.status === "running"} />
           )}
           {usedVlm && (
             <>
               {vlm!.prompt && <Prompt text={vlm!.prompt} />}
               <div className="claude-says">
-                <span className="cs-tag">Claude</span>
+                <span className="cs-tag">Dr. Qubit</span>
                 {vlm!.evidence || "(no evidence returned)"}
               </div>
             </>
@@ -986,7 +1040,7 @@ function NodeBody({
         {(images.length > 0 || figFallback) && (
           <Sees>
             <p className="see-note">
-              {images.length > 0 ? "ZNE extrapolation Claude inspected:" : "ZNE extrapolation being inspected:"}
+              {images.length > 0 ? "ZNE extrapolation Dr. Qubit inspected:" : "ZNE extrapolation being inspected:"}
             </p>
             <div className="node-figs">
               {images.length > 0 ? (
@@ -1005,13 +1059,13 @@ function NodeBody({
           )}
           {/* Live: the VLM's plot analysis streaming in, before the parsed verdict. */}
           {llm?.vlm && !usedVlm && (
-            <LiveStream text={llm.vlm} label="Claude (vision)" streaming={entry.status === "running"} />
+            <LiveStream text={llm.vlm} label="Dr. Qubit · vision" streaming={entry.status === "running"} />
           )}
           {usedVlm && (
             <>
               {vlm!.prompt && <Prompt text={vlm!.prompt} />}
               <div className="claude-says">
-                <span className="cs-tag">Claude</span>
+                <span className="cs-tag">Dr. Qubit</span>
                 {vlm!.rationale || "(no rationale returned)"}
                 {typeof vlm!.confidence === "number" ? ` (confidence ${vlm!.confidence})` : ""}
               </div>
@@ -1054,7 +1108,7 @@ function Decides({ children }: { children: ReactNode }) {
 function Prompt({ text }: { text: string }) {
   return (
     <details className="vlm-prompt">
-      <summary>prompt sent to Claude</summary>
+      <summary>prompt sent to Dr. Qubit</summary>
       <pre>{text}</pre>
     </details>
   );

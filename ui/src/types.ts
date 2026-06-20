@@ -65,6 +65,9 @@ export interface ProgressEvent {
   metric_value?: number | null;
   error_estimate?: number | null;
   target?: number;
+  // cache_status: whether this run is a replay of a recorded run (true) or a
+  // fresh, live run being recorded (false).
+  cached?: boolean;
 }
 
 export interface Experiment {

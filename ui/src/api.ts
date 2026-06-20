@@ -5,6 +5,22 @@ export async function fetchDevices(): Promise<{ devices: string[]; default: stri
   return r.json();
 }
 
+/** Whether the given setup is already recorded (drives the "cached" hint). */
+export async function checkCache(req: RunRequest): Promise<{ cached: boolean; key: string }> {
+  const r = await fetch("/api/cache/check", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(req),
+  });
+  return r.json();
+}
+
+/** Clear all recorded runs; returns how many were removed. */
+export async function clearCache(): Promise<{ cleared: number }> {
+  const r = await fetch("/api/cache", { method: "DELETE" });
+  return r.json();
+}
+
 interface RunCallbacks {
   onProgress: (ev: ProgressEvent) => void;
   onResult: (res: RunResult) => void;
