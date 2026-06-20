@@ -16,6 +16,7 @@ from ..dag.context import RunContext
 from ..decision.rules import decide
 from ..models import Decision, DecisionAction, Estimate, NodeResult, Strategy  # noqa: F401
 from ..problems import ideal_expectation
+from ._stream import token_emitter
 
 
 class ValidateNode(Node):
@@ -36,18 +37,26 @@ class ValidateNode(Node):
 
         confidence_threshold = float(ctx.config.get("vlm_confidence_threshold", 0.5))
 
-        # VLM judgment on the ZNE extrapolation plot (only meaningful when ZNE
-        # ran, i.e. there are >=2 scale points to inspect).
+        # The ZNE extrapolation plot the validate step inspects (only meaningful
+        # when ZNE ran, i.e. there are >=2 scale points). Build it once and both
+        # show it in the UI and hand it to the VLM.
+        plots: list = []
+        zne_fig = None
+        if len(estimate.zne_data) >= 2:
+            from ..reporting.plots import zne_extrapolation_figure
+
+            zne_fig = zne_extrapolation_figure(estimate.zne_data, estimate.value)
+            plots.append({"name": "zne_extrapolation", "format": "plotly", "data": zne_fig})
+
+        # VLM judgment on the extrapolation plot (analysis tool; never decides).
         vlm_verdict = None      # the confidence-gated verdict the decision uses
         vlm_trace = None        # the full verdict (incl. image/prompt/raw) for the UI
         tools = ctx.tool_client()
-        if tools.vlm_enabled and len(estimate.zne_data) >= 2:
-            from ..reporting.plots import zne_extrapolation_figure
-
-            fig = zne_extrapolation_figure(estimate.zne_data, estimate.value)
+        if tools.vlm_enabled and zne_fig is not None:
             verdict = tools.validate(
-                [{"name": "zne_extrapolation", "format": "plotly", "data": fig}],
+                [{"name": "zne_extrapolation", "format": "plotly", "data": zne_fig}],
                 confidence_threshold,
+                on_token=token_emitter(ctx, self.node_id, "vlm"),
             )
             vlm_trace = verdict
             if not verdict.get("degraded"):
@@ -95,6 +104,7 @@ class ValidateNode(Node):
                 iteration=len(attempts),
                 max_iterations=int(ctx.config.get("max_iterations", 8)),
                 confidence_threshold=confidence_threshold,
+                on_token=token_emitter(ctx, self.node_id, "agent"),
             )
             if proposed is not None:
                 decision, agent_strategy = proposed
@@ -133,4 +143,4 @@ class ValidateNode(Node):
             "vlm_verdict": vlm_trace,
         }
         ctx.put(self.node_id, outputs)
-        return NodeResult(node_id=self.node_id, outputs=outputs)
+        return NodeResult(node_id=self.node_id, outputs=outputs, plots=plots)

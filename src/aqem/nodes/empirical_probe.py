@@ -14,6 +14,7 @@ from ..policy import Action, ActionRequest
 from ..probes.circuits import probe_circuits
 from ..probes.classify import classify_probes
 from ..probes.histograms import histogram_figure
+from ._stream import token_emitter
 
 
 class EmpiricalProbeNode(Node):
@@ -65,7 +66,8 @@ class EmpiricalProbeNode(Node):
         vlm_classification = None
         if tools.vlm_enabled:
             threshold = float(ctx.config.get("vlm_confidence_threshold", 0.5))
-            vlm_classification = tools.classify_probe(plots, threshold)
+            on_token = token_emitter(ctx, self.node_id, "vlm")
+            vlm_classification = tools.classify_probe(plots, threshold, on_token=on_token)
             if not vlm_classification.get("degraded"):
                 merged["dominant_error"] = vlm_classification["dominant_error"]
                 for t in vlm_classification.get("suggested_focus", []):

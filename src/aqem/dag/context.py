@@ -8,7 +8,7 @@ them), and run configuration (device, VLM client, shot knobs).
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from ..models import Problem
 from ..policy import Policy
@@ -38,6 +38,11 @@ class RunContext:
     vlm: Optional[Any] = None
     tools: Optional[Any] = None
     store: dict[str, dict[str, Any]] = field(default_factory=dict)
+    # Live progress sink + current iteration, set by the engine each pass so a
+    # node can stream sub-events (e.g. LLM tokens) while it runs. ``emit`` is a
+    # no-op when no observer is wired (offline / tests).
+    emit: Callable[[dict[str, Any]], None] = lambda ev: None
+    iteration: int = 0
 
     # -- tool transport -----------------------------------------------------
     def tool_client(self):

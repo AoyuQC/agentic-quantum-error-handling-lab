@@ -31,9 +31,31 @@ config-only swap.
 import os
 import logging
 from abc import ABC, abstractmethod
-from typing import List, Optional
+from typing import Callable, List, Optional
 
 logger = logging.getLogger(__name__)
+
+# A token sink: called with each text delta as the model streams its answer.
+OnToken = Callable[[str], None]
+
+
+def _chunk_text(content: object) -> str:
+    """Coerce a streamed LangChain chunk's ``content`` to plain text.
+
+    Bedrock Converse chunks arrive either as a bare string or as a list of
+    content blocks (e.g. ``[{"type": "text", "text": "..."}]``); pull the text.
+    """
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        out = []
+        for block in content:
+            if isinstance(block, dict):
+                out.append(block.get("text") or block.get("content") or "")
+            elif isinstance(block, str):
+                out.append(block)
+        return "".join(out)
+    return ""
 
 
 class VLMProvider(ABC):
@@ -45,6 +67,7 @@ class VLMProvider(ABC):
         prompt: str,
         images_base64: List[str],
         image_format: str = "png",
+        on_token: Optional[OnToken] = None,
     ) -> str:
         """Analyze images with the VLM.
 
@@ -52,6 +75,9 @@ class VLMProvider(ABC):
             prompt: Analysis instructions
             images_base64: List of base64-encoded images
             image_format: Image format (png, jpeg)
+            on_token: optional sink called with each streamed text delta. When
+                provided and the provider supports streaming, the answer is
+                produced incrementally (and still returned in full).
 
         Returns:
             Analysis text from the VLM
@@ -82,8 +108,9 @@ class NVIDIAProvider(VLMProvider):
         prompt: str,
         images_base64: List[str],
         image_format: str = "png",
+        on_token: Optional[OnToken] = None,
     ) -> str:
-        """Analyze images using NVIDIA endpoint."""
+        """Analyze images using NVIDIA endpoint (streaming not wired; on_token ignored)."""
         try:
             from langchain_nvidia_ai_endpoints import ChatNVIDIA
             from langchain_core.messages import HumanMessage
@@ -142,8 +169,9 @@ class AnthropicProvider(VLMProvider):
         prompt: str,
         images_base64: List[str],
         image_format: str = "png",
+        on_token: Optional[OnToken] = None,
     ) -> str:
-        """Analyze images using Anthropic Claude."""
+        """Analyze images using Anthropic Claude (streaming not wired; on_token ignored)."""
         try:
             from langchain_anthropic import ChatAnthropic
             from langchain_core.messages import HumanMessage
@@ -204,8 +232,9 @@ class CustomEndpointProvider(VLMProvider):
         prompt: str,
         images_base64: List[str],
         image_format: str = "png",
+        on_token: Optional[OnToken] = None,
     ) -> str:
-        """Analyze images using custom endpoint."""
+        """Analyze images using custom endpoint (streaming not wired; on_token ignored)."""
         try:
             import httpx
         except ImportError as e:
@@ -286,6 +315,7 @@ class BedrockClaudeProvider(VLMProvider):
         prompt: str,
         images_base64: List[str],
         image_format: str = "png",
+        on_token: Optional[OnToken] = None,
     ) -> str:
         try:
             from langchain_core.messages import HumanMessage
@@ -310,7 +340,21 @@ class BedrockClaudeProvider(VLMProvider):
 
         try:
             chat = self._client()
-            response = await chat.ainvoke([HumanMessage(content=content)])
+            message = HumanMessage(content=content)
+            # Stream tokens to the sink when one is provided; otherwise a single
+            # blocking call. Either way the full text is returned.
+            if on_token is not None:
+                parts: list[str] = []
+                async for chunk in chat.astream([message]):
+                    delta = _chunk_text(chunk.content)
+                    if delta:
+                        parts.append(delta)
+                        try:
+                            on_token(delta)
+                        except Exception:  # never let UI plumbing break a run
+                            pass
+                return "".join(parts)
+            response = await chat.ainvoke([message])
             return response.content if isinstance(response.content, str) else str(response.content)
         except Exception as e:
             logger.error(f"Bedrock VLM call failed: {e}")
@@ -345,6 +389,7 @@ class SageMakerProvider(VLMProvider):
         prompt: str,
         images_base64: List[str],
         image_format: str = "png",
+        on_token: Optional[OnToken] = None,
     ) -> str:
         import asyncio
         import json

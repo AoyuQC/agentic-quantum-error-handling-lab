@@ -15,7 +15,7 @@ import asyncio
 import json
 import logging
 import re
-from typing import Any, Optional, Type
+from typing import Any, Callable, Optional, Type
 
 from pydantic import BaseModel, ValidationError
 
@@ -86,6 +86,7 @@ def inspect_structured(
     schema: Type[BaseModel],
     schema_hint: str,
     confidence_threshold: float = 0.5,
+    on_token: Optional[Callable[[str], None]] = None,
 ) -> dict[str, Any]:
     """Inspect plots with the VLM and return a validated dict (or a degraded flag).
 
@@ -114,7 +115,7 @@ def inspect_structured(
     trace = {"prompt": full_prompt, "images": images}
 
     try:
-        raw = _run_async(vlm.analyze_images(full_prompt, images))
+        raw = _run_async(vlm.analyze_images(full_prompt, images, on_token=on_token))
     except Exception as e:
         logger.error("VLM call failed: %s", e)
         return {"degraded": True, "reason": f"vlm call failed: {e}", **trace}
@@ -143,6 +144,7 @@ def classify_probe_with_vlm(
     vlm: Optional[VLMProvider],
     plots: list[dict[str, Any]],
     confidence_threshold: float = 0.5,
+    on_token: Optional[Callable[[str], None]] = None,
 ) -> dict[str, Any]:
     """VLM classification of the probe histograms (ProbeClassification schema)."""
     prompt = (
@@ -155,7 +157,8 @@ def classify_probe_with_vlm(
         "mitigation techniques matter most."
     )
     return inspect_structured(
-        vlm, plots, prompt, ProbeClassification, PROBE_SCHEMA_HINT, confidence_threshold
+        vlm, plots, prompt, ProbeClassification, PROBE_SCHEMA_HINT,
+        confidence_threshold, on_token=on_token,
     )
 
 
@@ -163,6 +166,7 @@ def validate_with_vlm(
     vlm: Optional[VLMProvider],
     plots: list[dict[str, Any]],
     confidence_threshold: float = 0.5,
+    on_token: Optional[Callable[[str], None]] = None,
 ) -> dict[str, Any]:
     """VLM judgment of the ZNE extrapolation plot (ValidateDecision schema)."""
     prompt = (
@@ -174,5 +178,6 @@ def validate_with_vlm(
         "versus shot noise. Recommend whether to stop or which retry mode to use."
     )
     return inspect_structured(
-        vlm, plots, prompt, ValidateDecision, VALIDATE_SCHEMA_HINT, confidence_threshold
+        vlm, plots, prompt, ValidateDecision, VALIDATE_SCHEMA_HINT,
+        confidence_threshold, on_token=on_token,
     )

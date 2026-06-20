@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Any, Optional, Protocol, runtime_checkable
+from typing import Any, Callable, Optional, Protocol, runtime_checkable
 
 from .braket_tool import (
     MitigationResult,
@@ -51,11 +51,13 @@ class ToolClient(Protocol):
     ) -> MitigationResult: ...
 
     def classify_probe(
-        self, plots: list[dict[str, Any]], confidence_threshold: float
+        self, plots: list[dict[str, Any]], confidence_threshold: float,
+        on_token: Optional[Callable[[str], None]] = None,
     ) -> dict[str, Any]: ...
 
     def validate(
-        self, plots: list[dict[str, Any]], confidence_threshold: float
+        self, plots: list[dict[str, Any]], confidence_threshold: float,
+        on_token: Optional[Callable[[str], None]] = None,
     ) -> dict[str, Any]: ...
 
 
@@ -89,14 +91,16 @@ class InProcessToolClient:
         return run_mitigation(circuit, observable, self._device, strategy, calibration)
 
     def classify_probe(
-        self, plots: list[dict[str, Any]], confidence_threshold: float
+        self, plots: list[dict[str, Any]], confidence_threshold: float,
+        on_token: Optional[Callable[[str], None]] = None,
     ) -> dict[str, Any]:
-        return classify_probe_with_vlm(self._vlm, plots, confidence_threshold)
+        return classify_probe_with_vlm(self._vlm, plots, confidence_threshold, on_token=on_token)
 
     def validate(
-        self, plots: list[dict[str, Any]], confidence_threshold: float
+        self, plots: list[dict[str, Any]], confidence_threshold: float,
+        on_token: Optional[Callable[[str], None]] = None,
     ) -> dict[str, Any]:
-        return validate_with_vlm(self._vlm, plots, confidence_threshold)
+        return validate_with_vlm(self._vlm, plots, confidence_threshold, on_token=on_token)
 
 
 class McpToolClient:
@@ -219,15 +223,18 @@ class McpToolClient:
         )
 
     def classify_probe(
-        self, plots: list[dict[str, Any]], confidence_threshold: float
+        self, plots: list[dict[str, Any]], confidence_threshold: float,
+        on_token: Optional[Callable[[str], None]] = None,
     ) -> dict[str, Any]:
+        # Token streaming does not cross the MCP boundary; on_token is ignored.
         return self._call(
             "classify_probe",
             {"plots": plots, "confidence_threshold": float(confidence_threshold)},
         )
 
     def validate(
-        self, plots: list[dict[str, Any]], confidence_threshold: float
+        self, plots: list[dict[str, Any]], confidence_threshold: float,
+        on_token: Optional[Callable[[str], None]] = None,
     ) -> dict[str, Any]:
         return self._call(
             "validate",

@@ -37,6 +37,54 @@ class CircuitGenerateNode(Node):
             "uses_pt": strategy.uses(Technique.PT.value),
             "uses_rem": strategy.uses(Technique.REM.value),
             "uses_zne": strategy.uses(Technique.ZNE.value),
+            "scale_factors": list(strategy.zne_scale_factors) if strategy.uses(Technique.ZNE.value) else [1],
         }
-        ctx.put(self.node_id, {"plan": plan})
-        return NodeResult(node_id=self.node_id, outputs={"plan": plan})
+        outputs = {"plan": plan, **_folded_views(ctx.circuit, strategy)}
+        ctx.put(self.node_id, outputs)
+        return NodeResult(node_id=self.node_id, outputs=outputs)
+
+
+def _folded_views(circuit, strategy: Strategy) -> dict:
+    """ASCII diagrams of the ZNE noise-folded circuits the mitigation will run.
+
+    This is what actually differs between iterations: the *base* logical circuit
+    is identical every pass, but ZNE re-runs it at increasing noise scale
+    factors (gate-folded copies at depth ~x1, x3, x5, ...). Surfacing the folded
+    set makes the per-iteration escalation visible (it was invisible when only
+    the base circuit was shown). REM/PT change the measurement/averaging, not
+    the drawn gate sequence, so we annotate them rather than redraw.
+    """
+    folds: list[dict] = []
+    if strategy.uses(Technique.ZNE.value) and len(strategy.zne_scale_factors) >= 1:
+        try:
+            from mitiq.zne import construct_circuits
+
+            folded = construct_circuits(circuit, scale_factors=list(strategy.zne_scale_factors))
+            for sf, fc in zip(strategy.zne_scale_factors, folded):
+                folds.append({
+                    "scale": int(sf),
+                    "depth": int(getattr(fc, "depth", 0)),
+                    "n_gates": len(getattr(fc, "instructions", [])),
+                    "diagram": _diagram(fc),
+                })
+        except Exception:  # folding/preview must never break the run
+            folds = []
+    if not folds:
+        # No ZNE: the single circuit run as-is (scale 1).
+        folds = [{
+            "scale": 1,
+            "depth": int(getattr(circuit, "depth", 0)),
+            "n_gates": len(getattr(circuit, "instructions", [])),
+            "diagram": _diagram(circuit),
+        }]
+    return {"folded_circuits": folds}
+
+
+def _diagram(circuit) -> str:
+    try:
+        return str(circuit.diagram())
+    except Exception:
+        try:
+            return str(circuit)
+        except Exception:
+            return ""

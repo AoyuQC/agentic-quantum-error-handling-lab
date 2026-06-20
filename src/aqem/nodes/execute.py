@@ -71,6 +71,10 @@ class ExecuteNode(Node):
             "shots_used": result.shots_used,
             "zne_data": result.zne_data,
             "techniques": result.techniques,
+            # How many circuits actually ran this pass (scales x twirls x bases),
+            # so the execute card can label the folded set shown from
+            # circuit_generate (the per-iteration difference).
+            "n_executables": ctx.get("circuit_generate").get("plan", {}).get("n_executables"),
         }
         ctx.put(self.node_id, outputs)
         return NodeResult(node_id=self.node_id, outputs=outputs, shots_used=result.shots_used)
