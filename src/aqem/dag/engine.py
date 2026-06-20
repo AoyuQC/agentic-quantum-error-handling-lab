@@ -158,9 +158,13 @@ class DAGEngine:
         last_post_process: dict[str, Any] = {}
 
         self._emit({"event": "run_start", "nodes": list(self.order)})
+        # Let nodes stream sub-events (e.g. live LLM tokens) through the same
+        # observer the engine uses; ``_emit`` already guards against failures.
+        ctx.emit = self._emit
 
         for iteration in range(1, self.max_iterations + 1):
             record.iterations = iteration
+            ctx.iteration = iteration
             self._emit({"event": "iteration", "iteration": iteration})
 
             # Execute dirty (non-terminal) nodes in topological order.

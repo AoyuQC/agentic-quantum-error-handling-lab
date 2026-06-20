@@ -21,7 +21,14 @@ class FakeVLM(VLMProvider):
         self.calls: list[dict] = []
 
     async def analyze_images(
-        self, prompt: str, images_base64: List[str], image_format: str = "png"
+        self, prompt: str, images_base64: List[str], image_format: str = "png",
+        on_token=None,
     ) -> str:
         self.calls.append({"prompt": prompt, "n_images": len(images_base64)})
+        # Mimic streaming so on_token-dependent paths exercise the same code.
+        if on_token is not None:
+            try:
+                on_token(self.response)
+            except Exception:
+                pass
         return self.response

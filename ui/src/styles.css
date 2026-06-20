@@ -93,6 +93,80 @@ button.run:disabled { opacity: .5; cursor: not-allowed; }
   background-size: 200% 100%; animation: sheen 1.2s linear infinite; }
 @keyframes sheen { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
 
+/* ---- live error->target convergence track (under the progress bar) ---- */
+.convergence {
+  display: flex; align-items: center; gap: 16px; margin: -10px 0 22px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 10px 14px;
+}
+.conv-svg { flex: 1 1 auto; width: 100%; height: 64px; min-width: 0; }
+.conv-target { stroke: var(--muted); stroke-width: 1; opacity: .6; }
+.conv-target-label { fill: var(--muted); font-size: 10px; font-family: ui-monospace, monospace; }
+.conv-line { stroke: var(--accent-2); stroke-width: 2; }
+.conv-dot { fill: var(--accent-2); stroke: var(--panel); stroke-width: 1.5; }
+.conv-dot.met { fill: var(--accent); }
+.conv-readout { flex: none; min-width: 150px; display: flex; flex-direction: column; gap: 4px; }
+.cr-main { font-size: 13px; font-weight: 600; }
+.cr-arrow { color: var(--muted); }
+.cr-sub { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+.conv-delta { font-variant-numeric: tabular-nums; font-weight: 700; }
+.conv-delta.met { color: var(--accent); }
+.conv-delta.miss { color: var(--muted); }
+.conv-trend { font-size: 16px; font-weight: 800; }
+.conv-trend.good { color: var(--accent); }
+.conv-trend.bad { color: var(--danger); }
+
+/* ---- Dr. Qubit: the first-person narrator above the current step ---- */
+.narrator {
+  display: flex; align-items: center; gap: 14px; padding: 14px 18px; border-radius: 14px;
+  margin-bottom: 4px;
+  background: linear-gradient(135deg, rgba(99,102,241,.22), rgba(16,185,129,.10));
+  border: 1px solid var(--accent-2);
+  box-shadow: 0 0 0 1px rgba(99,102,241,.15), 0 6px 20px rgba(99,102,241,.10);
+}
+.narrator.settled { background: linear-gradient(135deg, rgba(99,102,241,.14), rgba(29,37,64,.4)); }
+.narrator.settled.met { background: linear-gradient(135deg, rgba(16,185,129,.22), rgba(29,37,64,.4)); border-color: var(--accent); }
+.nr-avatar { font-size: 30px; flex: none; animation: bob 2.4s ease-in-out infinite; }
+.narrator.settled .nr-avatar { animation: none; }
+.nr-body { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.nr-name { font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--accent-2); }
+.narrator.settled.met .nr-name { color: var(--accent); }
+.nr-line { font-size: 16px; font-style: italic; line-height: 1.4; color: var(--ink); }
+.nr-line strong { font-style: normal; font-weight: 800; color: #fff; }
+.narrator .dots::after { content: ""; animation: ellipsis 1.4s steps(1, end) infinite; }
+@keyframes ellipsis { 0% { content: ""; } 25% { content: "."; } 50% { content: ".."; } 75%, 100% { content: "..."; } }
+@keyframes bob { 0%, 100% { transform: translateY(0) rotate(-2deg); } 50% { transform: translateY(-4px) rotate(2deg); } }
+
+/* ---- single-step walkthrough: one step shown, fading between steps ---- */
+/* The display shows exactly one step at a time and trails the engine: a finished
+   step lingers, fades out, and the next fades in — paced for a human to follow.
+   The 1.4s here must match STEP_FADE_MS in App.tsx. */
+.step-stage {
+  display: flex; flex-direction: column; gap: 4px;
+  transition: opacity 1.4s ease, transform 1.4s ease;
+}
+.step-stage.step-in { opacity: 1; transform: translateY(0); }
+.step-stage.step-out { opacity: 0; transform: translateY(-8px); }
+
+/* ---- folded (passed) step rows, listed beneath the current step ---- */
+.folded-step {
+  display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; cursor: pointer;
+  background: var(--panel); border: 1px solid var(--border); border-left: 3px solid var(--border);
+  border-radius: 10px; padding: 9px 14px; color: var(--ink); font-size: 13px;
+}
+.folded-step:hover { border-color: var(--accent-2); background: var(--panel-2); }
+.folded-step.done { border-left-color: var(--accent); }
+.folded-step.failed { border-left-color: var(--danger); }
+.fs-caret { color: var(--muted); font-size: 11px; }
+.fs-badge { color: var(--muted); }
+.fs-icon { font-size: 14px; }
+.fs-label { font-weight: 600; }
+.fs-sum { margin-left: auto; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+
+/* the leading (current) step card gets a brighter accent */
+.node-card.step-active { box-shadow: 0 0 0 1px rgba(99,102,241,.25); }
+.nc-collapse { margin-left: 8px; background: none; border: none; color: var(--muted); cursor: pointer; font-size: 13px; padding: 0 4px; }
+.nc-collapse:hover { color: var(--ink); }
+
 /* current iteration on the center stage */
 .iter-section { margin-bottom: 22px; }
 .iter-title { display: flex; align-items: center; gap: 10px; margin: 0 0 14px;
@@ -148,6 +222,32 @@ button.run:disabled { opacity: .5; cursor: not-allowed; }
 .vlm-prompt summary { cursor: pointer; color: var(--muted); font-size: 12px; }
 .vlm-prompt pre { white-space: pre-wrap; font-size: 11.5px; color: var(--muted); background: var(--panel-2);
   border: 1px solid var(--border); border-radius: 8px; padding: 9px 11px; margin: 6px 0 0; line-height: 1.5; }
+
+/* circuit diagram (execute / circuit_generate steps) */
+.circuit-diagram {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; line-height: 1.25;
+  white-space: pre; overflow-x: auto; margin: 6px 0 0; padding: 12px 14px;
+  background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; color: var(--ink);
+}
+
+/* ZNE folded circuit set (circuit_generate / execute) — scales side by side */
+.circuit-set { display: flex; flex-wrap: wrap; gap: 12px; }
+.circuit-fold { margin: 0; flex: 1 1 260px; min-width: 240px; }
+.circuit-fold figcaption { display: flex; align-items: baseline; gap: 8px; margin-bottom: 4px; }
+.cf-scale { font-size: 12px; font-weight: 700; color: var(--accent-2); }
+.cf-meta { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* live LLM transcript (streamed token by token) */
+.llm-stream { margin-top: 8px; border-left: 2px solid var(--accent-2); border-radius: 6px;
+  background: var(--panel-2); overflow: hidden; }
+.llm-stream.live { border-left-color: var(--accent); }
+.ls-tag { display: block; font-size: 10px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--accent-2); padding: 6px 11px 0; }
+.llm-stream.live .ls-tag { color: var(--accent); }
+.ls-body { margin: 2px 0 0; padding: 4px 11px 10px; font-family: ui-monospace, monospace; font-size: 11.5px;
+  line-height: 1.5; color: var(--ink); white-space: pre-wrap; word-break: break-word; max-height: 220px; overflow-y: auto; }
+.ls-caret { display: inline-block; color: var(--accent); animation: blink 1s steps(1) infinite; }
+@keyframes blink { 0%, 50% { opacity: 1; } 50.01%, 100% { opacity: 0; } }
 
 /* metric cards */
 .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }

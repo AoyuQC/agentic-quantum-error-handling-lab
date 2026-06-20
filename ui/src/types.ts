@@ -52,6 +52,10 @@ export interface ProgressEvent {
   action?: string;
   reason?: string;
   nodes?: string[];
+  // llm_delta: a streamed text fragment from the VLM ("vlm") or the
+  // orchestration agent ("agent"), surfaced live while the node runs.
+  role?: string;
+  delta?: string;
   // node_done: the node's outputs minus large count arrays (agent reasoning).
   detail?: Record<string, unknown>;
   // node_done: figures the node produced (what the agent sees).

@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from pydantic import BaseModel, Field, ValidationError
 from typing import Literal
@@ -247,6 +247,7 @@ def propose_decision(
     iteration: int,
     max_iterations: int,
     confidence_threshold: float = 0.5,
+    on_token: Optional[Callable[[str], None]] = None,
 ) -> Optional[tuple[Decision, Optional[Strategy]]]:
     """Ask the orchestration agent for the next decision + strategy.
 
@@ -275,7 +276,7 @@ def propose_decision(
 
     try:
         # Text-only reasoning call (no images) on the same Bedrock client.
-        raw = _run_async(vlm.analyze_images(prompt, []))
+        raw = _run_async(vlm.analyze_images(prompt, [], on_token=on_token))
     except Exception as e:
         logger.error("orchestrator agent call failed: %s", e)
         return None
